@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Optuna / training scratch
+*.db
+*.log
+checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local working notes, not part of the deliverable
+docs/plan/
+
+# NOTE: reports/ is intentionally NOT ignored — committed results are a deliverable.
