@@ -34,11 +34,13 @@ jobs:
           HOST_UID=$(id -u) HOST_GID=$(id -g) \
             docker compose up --build --exit-code-from reproduce reproduce
 
-      # The central reproducibility claim: a fresh container run must recreate
-      # the committed results byte for byte. run_meta.json is deliberately not
-      # compared, since versions and platform differ per machine by design.
+      # Everything derived from the data, every baseline and both dense networks
+      # must reproduce exactly. Conv2D dispatches on CPU SIMD features, so the CNN
+      # is held to a tolerance instead — see scripts/compare_results.py.
       - name: Verify results match the committed golden copy
-        run: git diff --exit-code reports/results.json
+        run: |
+          git show HEAD:reports/results.json > /tmp/golden.json
+          python3 scripts/compare_results.py /tmp/golden.json reports/results.json
 
       - name: Upload reports
         if: always()

@@ -153,10 +153,27 @@ Abweichungen:
 CPU-Betrieb kostet hier nichts: bei 209 bzw. 25 745 Parametern und 11 Beispielen liegt der
 Aufwand im Sekundenbereich.
 
-**Nachgewiesen, nicht behauptet.** Ein Lauf im Container erzeugte eine `results.json`, die
-**byteidentisch** zu einem Lauf auf dem Host war — andere Distribution, andere libc,
-unabhängig gebaute Wheels. Die CI baut den Container bei jedem Push, führt die Pipeline aus
-und schlägt fehl, wenn sich `results.json` um ein einziges Byte unterscheidet.
+**Nachgewiesen, nicht behauptet — und mit der Genauigkeit formuliert, die tatsächlich
+gilt.** Gemessen über zwei verschiedene Maschinen hinweg (dieser Host und ein
+GitHub-Runner):
+
+| Bestandteil | Reproduzierbarkeit |
+|---|---|
+| Datenaudit, Fehleruntergrenzen, Merkmale, Labels, Lernkurve, Kontrolle | **exakt** |
+| alle vier Baselines | **exakt** |
+| `feature_mlp`, `monotone_mlp` | **exakt** |
+| `cnn` | Abweichung ~1,5e-3 relativ |
+
+Nur das Faltungsmodell weicht ab: `Conv2D` wählt seine Kernel anhand der
+SIMD-Fähigkeiten der CPU aus, ein anderer Prozessor nimmt also einen anderen Codepfad.
+Gewöhnliche Matrixmultiplikationen tun das nicht — deshalb sind beide dichten Netze
+bitgleich.
+
+Eine ursprünglich formulierte Behauptung „byteidentisch" galt nur für Host gegen Container
+auf **derselben** Maschine und war maschinenübergreifend zu stark. Statt die gesamte
+Prüfung auf eine Toleranz aufzuweichen, prüft `scripts/compare_results.py` jeden
+Bestandteil mit der Genauigkeit, die er wirklich garantiert. Eine Regression in einem exakt
+reproduzierbaren Teil bricht den Build weiterhin ab.
 
 Damit diese Prüfung überhaupt aussagekräftig ist, sind die Ausgaben getrennt:
 `results.json` enthält ausschließlich Metriken, `run_meta.json` die veränderliche Herkunft

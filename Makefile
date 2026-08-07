@@ -33,7 +33,7 @@ submission-check:  ## Verify every rubric point before publishing
 
 verify:  ## Prove a container run reproduces the committed results
 	docker compose up --build --exit-code-from reproduce reproduce
-	git diff --exit-code reports/results.json
+	git show HEAD:reports/results.json > /tmp/golden.json && python3 scripts/compare_results.py /tmp/golden.json reports/results.json
 	@echo "Container output matches the committed golden results."
 
 .PHONY: help reproduce validate search test lint dod submission-check verify

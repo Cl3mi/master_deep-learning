@@ -306,8 +306,15 @@ criterion must not be forfeited.
 
 CPU-only costs nothing here: ~25 k parameters over 11 samples runs in seconds.
 
-**Claim discipline.** The determinism claim is *verified*, not assumed, and stated at
-the precision it was tested: identical on the platforms exercised (local + CI amd64).
+**Claim discipline — measured outcome.** The determinism claim is verified, not assumed,
+and the measurement narrowed it. Across two machines (this host and a GitHub runner)
+everything derived from the data, all four baselines and **both dense networks** reproduce
+exactly; only the **CNN** varies, by ~1.5e-3 relative, because `Conv2D` dispatches on CPU
+SIMD features while plain GEMMs do not.
+
+The original "byte-identical across environments" wording held for host↔container on one
+machine and overreached across machines. `scripts/compare_results.py` now holds each part
+to the precision it genuinely guarantees rather than weakening the whole check.
 
 ### 7.3 Continuous proof
 

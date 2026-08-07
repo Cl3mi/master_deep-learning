@@ -156,10 +156,26 @@ measurement of how much tuning flatters a model at this sample size.
 
 `results.json` holds metrics only; volatile provenance lives in `run_meta.json`. That
 split is what makes the guarantee checkable: CI builds the pinned container, runs the
-pipeline and fails if `results.json` differs by a single byte.
+pipeline, and compares against the committed copy.
 
-Verified during development: a container run produced results **byte-identical** to a run
-on the host — different distribution, different libc, independently built wheels.
+**The guarantee, stated at the precision it actually holds.** Measured across two
+different machines (this host and a GitHub runner):
+
+| | reproducibility |
+|---|---|
+| Dataset audit, error floors, features, labels, learning curve, control | **exact** |
+| All four baselines | **exact** |
+| `feature_mlp`, `monotone_mlp` | **exact** |
+| `cnn` | agrees to ~1.5e-3 relative |
+
+Only the convolutional model varies, because Conv2D dispatches on CPU SIMD features and a
+different processor takes a different kernel. Plain matrix multiplies do not, which is why
+both dense networks reproduce bit-for-bit.
+
+Rather than weaken the whole check to a tolerance,
+[`scripts/compare_results.py`](scripts/compare_results.py) holds each part to the precision
+it genuinely guarantees — exact where exactness holds, bounded where it does not. A
+regression in any exact component still fails the build.
 
 The determinism stack: base image pinned by digest · dependencies from a lockfile ·
 `platform: linux/amd64` · `TF_ENABLE_ONEDNN_OPTS=0` (oneDNN otherwise dispatches different
