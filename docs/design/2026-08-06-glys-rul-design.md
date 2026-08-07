@@ -73,18 +73,24 @@ noise blobs, ordered left-to-right as cone / body / pylon.
 
 Region colours mapped through the calibrated scale:
 
+Measured through the calibrated pipeline (`colorscale.ColorScale` + `segment.regions`):
+
 | RUL | cone | body | pylon | Σ °C |
 |---|---|---|---|---|
-| 3 / 5 h | 825 | 1193 | 1193 | 3211 |
-| 24 / 26 h | 656 | 825 | 1193 | 2674 |
-| 47 / 51 h | 656 | 825 | 825 | 2306 |
-| 73 / 76 h | 0 | 656 | 825 | 1481 |
-| 78 / 82 h | 0 | 0 | 656 | 656 |
-| 100 h | 0 | 0 | 0 | 0 |
+| 3 / 5 h | 827 | 1194 | 1194 | 3215 |
+| 24 / 26 h | 657 | 827 | 1194 | 2679 |
+| 47 / 51 h | 657 | 827 | 827 | 2312 |
+| 73 / 76 h | 0 | 657 | 827 | 1485 |
+| 78 / 82 h | 0 | 0 | 657 | 658 |
+| 100 h | 0 | 0 | 0 | 1 |
 
-The dataset uses **only four distinct temperatures — {0, 656, 825, 1193} °C**. The
-thermal state is a 3-symbol word over a 4-letter alphabet; 6 of 64 possible states are
+The dataset uses **only four distinct temperatures — {0.33, 657.33, 827.36, 1193.81} °C**.
+The thermal state is a 3-symbol word over a 4-letter alphabet; 6 of 64 possible states are
 observed. Heat drains front-to-back, pylon last.
+
+Values are quantised by the LUT (3685 entries over 1200 °C ≈ 0.33 °C per step), so the
+cold end reads 0.33 °C rather than exactly zero. These are the pipeline's own numbers —
+the report must quote `reports/results.json`, never a figure derived by hand.
 
 `Σ °C` is **strictly monotone decreasing in RUL**. Three scalars therefore carry 100 %
 of the available information.
@@ -187,7 +193,7 @@ in the codebase calls PIL directly.
 `ColorScale.from_image(path, vmin, vmax)` — detects the gradient bar's bounding box,
 averages its interior rows into an N×3 LUT, and **asserts invertibility**: every bar
 sample's nearest neighbour must lie within 50 °C of its true value. Measured on the
-supplied scale: 0/3685 ambiguous, max round-trip error 14 °C, mean 1.32 °C.
+supplied scale: 3685 LUT entries, 0 ambiguous samples, max round-trip error 12.7 °C.
 `to_celsius(rgb) -> float` · `to_map(image) -> np.ndarray[H,W] float` (°C per pixel).
 
 Nearest-neighbour lookup in RGB is sufficient given the invertibility assertion; the
