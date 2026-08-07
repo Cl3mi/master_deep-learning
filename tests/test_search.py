@@ -75,6 +75,45 @@ def test_campaign_is_reproducible(tmp_path, ladder):
     assert np.allclose(first["mae"], second["mae"])
 
 
+def test_ledger_is_written_incrementally(tmp_path, ladder):
+    """A long campaign must not lose everything if it is interrupted."""
+    features, target, groups = ladder
+    output = tmp_path / "experiments.csv"
+    seen: list[int] = []
+
+    def spy(frame):
+        seen.append(len(frame))
+
+    run_campaign(
+        features, target, groups, n_trials=3, output=output,
+        families=("feature_mlp",), max_epochs=20, on_trial=spy,
+    )
+
+    assert seen == [1, 2, 3], "the ledger must grow after every trial"
+    assert output.is_file()
+
+
+def test_ledger_survives_an_interrupted_campaign(tmp_path, ladder):
+    """Whatever completed before the interruption must still be on disk."""
+    features, target, groups = ladder
+    output = tmp_path / "experiments.csv"
+
+    def stop_after_two(frame):
+        if len(frame) == 2:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_campaign(
+            features, target, groups, n_trials=5, output=output,
+            families=("feature_mlp",), max_epochs=20, on_trial=stop_after_two,
+        )
+
+    import pandas as pd
+
+    assert output.is_file()
+    assert len(pd.read_csv(output)) == 2
+
+
 def test_ledger_is_sorted_best_first(tmp_path, ladder):
     features, target, groups = ladder
 

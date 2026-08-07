@@ -113,6 +113,7 @@ def run_campaign(
     images: np.ndarray | None = None,
     seed: int = 0,
     max_epochs: int | None = None,
+    on_trial=None,
 ) -> pd.DataFrame:
     """Search every requested family and write the full ledger.
 
@@ -122,6 +123,20 @@ def run_campaign(
     without narrowing the space the real campaign explores.
     """
     records: list[dict] = []
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    def flush() -> pd.DataFrame:
+        """Persist the ledger after every trial.
+
+        A campaign runs for tens of minutes; writing only at the end would lose
+        the entire record to an interrupt or a crash.
+        """
+        frame = pd.DataFrame(records)
+        frame.to_csv(output, index=False)
+        if on_trial is not None:
+            on_trial(frame)
+        return frame
 
     def matrix_for(representation: str) -> np.ndarray:
         if representation == "image":
@@ -165,6 +180,7 @@ def run_campaign(
                         "status": "failed", "note": str(error)[:200],
                     }
                 )
+                flush()
                 raise optuna.TrialPruned from error
 
             records.append(
@@ -174,6 +190,7 @@ def run_campaign(
                     "status": "ok", "note": "",
                 }
             )
+            flush()
             return result.metrics["mae"]
 
         study = optuna.create_study(
@@ -183,6 +200,5 @@ def run_campaign(
 
     frame = pd.DataFrame(records)
     frame = frame.sort_values(["status", "mae"], ascending=[True, True]).reset_index(drop=True)
-    Path(output).parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output, index=False)
     return frame
