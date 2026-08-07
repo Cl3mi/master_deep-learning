@@ -127,7 +127,21 @@ empirically — and it is exactly the alternative-architecture idea the brief fl
 
 **Goals**
 
-- Reach the provable accuracy optimum and *demonstrate* it is the optimum.
+- Reach the best honest accuracy the data supports, and report it against the provable
+  floor rather than in place of it.
+
+  **Measured correction to an earlier assumption.** This design originally predicted that
+  isotonic regression on Σ°C would land essentially *on* the 1.364 h floor. That holds
+  in-sample (measured 1.364 h) but fails under grouped cross-validation, where the same
+  model scores **11.68 h** — 8.6× worse. The gap is structural, not a modelling defect:
+  with six distinct states and leave-one-group-out, each fold trains on five states and
+  must predict a sixth. Interior states are interpolation (MAE 8.31 h); the two endpoints
+  are extrapolation beyond anything seen, and isotonic clips to its training range, so a
+  held-out 3 h reads 25 h and a held-out 100 h reads 80 h (MAE 20.67 h across those folds).
+
+  The floor therefore bounds what is achievable *given the labels*; the endpoint geometry
+  bounds what is achievable *given six states*. Both belong in the report, and the honest
+  number is the cross-validated one.
 - Make every methodological choice traceable to a dataset property established in §2.
 - One-command reproduction, verified continuously rather than asserted.
 - Document the full optimisation campaign including dead ends.
