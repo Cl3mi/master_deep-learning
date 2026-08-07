@@ -28,9 +28,12 @@ dod:  ## Definition-of-Done gate for the current change
 	@[ -z "$$(git status --porcelain)" ] || (echo "working tree dirty"; exit 1)
 	@echo "Definition of Done satisfied."
 
+submission-check:  ## Verify every rubric point before publishing
+	./scripts/submission_check.sh
+
 verify:  ## Prove a container run reproduces the committed results
 	docker compose up --build --exit-code-from reproduce reproduce
 	git diff --exit-code reports/results.json
 	@echo "Container output matches the committed golden results."
 
-.PHONY: help reproduce validate search test lint dod verify
+.PHONY: help reproduce validate search test lint dod submission-check verify
