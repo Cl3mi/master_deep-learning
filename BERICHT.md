@@ -34,7 +34,8 @@ Physik ausnutzt.
 | monotone_mlp | 20,65 | 24,54 | 0,397 | 0,379 |
 | nearest_neighbour | 22,82 | 23,04 | 0,469 | 0,314 |
 | mean | 33,28 | 37,82 | −0,432 | 0,000 |
-| cnn | 41,78 | 53,50 | −1,866 | −0,256 |
+| cnn | 41,07 | 54,10 | −1,933 | −0,234 |
+| cnn_unmasked_background | 47,01 | 54,19 | −1,942 | −0,413 |
 
 ---
 
@@ -136,7 +137,7 @@ und nie trainiert.
 
 ## 2. Reproduzierbare Umgebung (10 %)
 
-`docker compose up` führt die vollständige Pipeline aus (gemessen 5 min 37 s). Ohne Docker
+`docker compose up` führt die vollständige Pipeline aus (gemessen 5 min 17 s). Ohne Docker
 funktioniert `uv sync && uv run glys-rul reproduce` aus derselben Lockdatei.
 
 **Der Determinismus-Stack.** Jede Maßnahme beseitigt eine dokumentierte Quelle von
@@ -204,7 +205,7 @@ statt still falsche Ergebnisse zu liefern.
 das RGB-Bild: so verarbeiten CNN und Merkmalsmodelle dieselbe physikalische Größe, und ein
 Unterschied im Ergebnis spiegelt die Architektur wider, nicht die Repräsentation.
 
-**Ergebnis: MAE 41,78 h, Skill −0,256** — schlechter als der Mittelwert. Das war
+**Ergebnis: MAE 41,07 h, Skill −0,234** — schlechter als der Mittelwert. Das war
 vorhergesagt und ist ein Befund, kein Versäumnis: die Geometrie ist über alle Bilder
 identisch, es gibt kein räumliches Muster, das eine Faltung ausnutzen könnte, und
 Global-Average-Pooling verwirft die Position ohnehin. Bei 25 745 Parametern auf 11
@@ -221,6 +222,19 @@ Zwei Defekte traten beim Messen zutage und wurden behoben:
    transformierter Bilder zurück, das Netz sah also **kein einziges unverändertes
    Beispiel** — das war Verfälschung, keine Augmentation. Es trainiert jetzt auf den
    Originalen plus augmentierten Runden.
+
+**Der Hintergrund war ein Eingabefehler.** Weiß liegt in der Farbskala am *heißen* Ende,
+ein unmaskierter Hintergrund liest sich also als rund 1000 °C — heißer als große Teile des
+Triebwerks. Der Merkmalspfad maskiert auf Triebwerkspixel, der CNN-Pfad tat das zunächst
+nicht. Beide Varianten werden gemessen:
+
+| CNN-Eingabe | MAE [h] | Skill |
+|---|---:|---:|
+| Hintergrund maskiert | **41,07** | −0,234 |
+| unmaskiert | 47,01 | −0,413 |
+
+Das Maskieren verbessert das Ergebnis um 12,6 %. Beide Werte stehen in `results.json`,
+damit die Kosten des Artefakts belegt und nicht bloß behauptet sind.
 
 **Nachtrag aus der Kampagne: Augmentation hilft dem CNN hier gar nicht.** Bei der
 festgelegten Konfiguration verbesserte sie das Ergebnis, doch die systematische Suche
@@ -399,14 +413,39 @@ Dieselben Vorhersagen, in 10-Stunden-Klassen eingeteilt. Die Matrix ist dünn be
 elf Beispiele auf zehn Klassen entfallen — was gleichzeitig zeigt, warum ein direkt
 trainierter Klassifikator hier die schlechtere Wahl gewesen wäre.
 
-### 6.6 Prognoseintervalle
+### 6.6 Attribution — worauf schauen die Modelle?
+
+**Permutationswichtigkeit** auf dem monotonen Netz (dem Modell, das die drei
+Regionstemperaturen getrennt verarbeitet): Anstieg des MAE, wenn ein Merkmal vertauscht
+wird.
+
+| Merkmal | Wichtigkeit [h] |
+|---|---:|
+| Konus | **13,20** |
+| Pylon | 9,24 |
+| Körper | −0,11 |
+
+Der Konus trägt am meisten, der Körper praktisch nichts. Das passt zur Temperaturleiter
+aus §1.4: der Körper nimmt über die sechs Zustände nur drei Werte an, während Konus und
+Pylon die Ränder des Bereichs auflösen.
+
+**Occlusion** auf dem CNN, angewandt auf das heißeste Beispiel (3 h):
+
+![Occlusion](reports/figures/occlusion.png)
+
+Die Empfindlichkeit ist über das gesamte Bild **diffus verteilt** — auch über reinen
+Hintergrund. Das CNN richtet seine Aufmerksamkeit also nicht auf das Triebwerk. Damit ist
+sein Versagen nicht nur am Ergebnis ablesbar, sondern auch am Mechanismus: Es hat keine
+räumliche Struktur gefunden, weil es in diesem Datensatz keine zu finden gibt.
+
+### 6.7 Prognoseintervalle
 
 Statt eines Punktwerts liefert das System ein Intervall aus dem Jackknife+-Quantil der
 Out-of-Fold-Residuen: bei 90 % Zielabdeckung eine Halbbreite von **21,95 h**. Das ist
 breit, aber ehrlich — und mit der Endlichkeitskorrektur `(n+1)/n` bei sechs Residuen
 tatsächlich gültig statt nur asymptotisch.
 
-### 6.7 Grenzen des Modells
+### 6.8 Grenzen des Modells
 
 - Es kennt **sechs** thermische Zustände; zwischen ihnen wird interpoliert, darüber hinaus
   extrapoliert. Die interaktive Demo kennzeichnet Eingaben außerhalb des beobachteten

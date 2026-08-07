@@ -43,7 +43,7 @@ def grouped_splits(
 
 
 def build_image_tensor(
-    table, scale, data_dir, image_size: int = config.IMAGE_SIZE
+    table, scale, data_dir, image_size: int = config.IMAGE_SIZE, mask_background: bool = False
 ) -> np.ndarray:
     """Convert every sample to a normalised single-channel temperature map.
 
@@ -56,11 +56,17 @@ def build_image_tensor(
     from pathlib import Path
 
     from .io import load_rgb
+    from .segment import foreground
 
     maps = []
     for filename in table["filename"]:
         image = load_rgb(Path(data_dir) / filename)
         temperatures = scale.to_map(image)
+        if mask_background:
+            # White is nearest the hot end of the colour scale, so an unmasked
+            # background reads as roughly 1000 °C — hotter than much of the
+            # engine. Zero it so the network sees temperature, not an artefact.
+            temperatures = np.where(foreground(image), temperatures, 0.0)
         zoom = (image_size / temperatures.shape[0], image_size / temperatures.shape[1])
         resized = _fit_to(ndimage.zoom(temperatures, zoom, order=1, mode="nearest"),
                           image_size, image_size)

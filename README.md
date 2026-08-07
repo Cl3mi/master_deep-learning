@@ -83,7 +83,8 @@ out one content group entirely, so no model is ever scored on an image it has se
 | monotone_mlp | 20.65 | 24.54 | 0.397 | 0.379 |
 | nearest_neighbour | 22.82 | 23.04 | 0.469 | 0.314 |
 | mean | 33.28 | 37.82 | −0.432 | 0.000 |
-| cnn | 41.78 | 53.50 | −1.866 | −0.256 |
+| cnn | 41.07 | 54.10 | −1.933 | −0.234 |
+| cnn_unmasked_background | 47.01 | 54.19 | −1.942 | −0.413 |
 
 *Irreducible floor: MAE 1.364 h · RMSE 1.492 h.*
 
@@ -125,9 +126,9 @@ temperatures carry strictly more information and perform strictly worse — at e
 samples the sum is a physics-motivated reduction that regularises better than anything the
 optimiser can learn. Feature engineering beats model capacity here.
 
-Tuning also gave the CNN a fair hearing: 14 dedicated trials improved it from 41.8 to
-24.9 h, so its poor showing is not merely bad hyperparameters. It remains far behind an
-untuned linear regression.
+Tuning also gave the CNN a fair hearing: 14 dedicated trials reached 24.9 h, so its poor
+showing is not merely bad hyperparameters. It remains far behind an untuned linear
+regression.
 
 ### Honest versus tuned
 

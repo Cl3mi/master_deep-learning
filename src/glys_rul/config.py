@@ -33,7 +33,10 @@ SEEDS = (0, 1, 2, 3, 4)
 TARGET_SCALE = 100.0         # RUL is divided by this before training
 IMAGE_SIZE = 64           # 128 px costs 4x the time for no measured accuracy gain
 CNN_EPOCHS = 200
-CNN_AUGMENT_ROUNDS = 3    # training set is originals plus this many augmented copies
+# The campaign searched augment_rounds 0..4 and found 0 best, with error growing
+# monotonically as rounds are added: with nine training images, geometric
+# augmentation displaces more signal than it buys in robustness.
+CNN_AUGMENT_ROUNDS = 0
 MLP_EPOCHS = 500
 LEARNING_RATE = 1e-3
 MAX_LOGO_GROUPS = 10         # above this, fall back to GroupKFold

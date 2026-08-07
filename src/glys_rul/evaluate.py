@@ -131,32 +131,42 @@ def run_evaluation(
         from .dataset import augment_batch, build_image_tensor
         from .models import build_cnn
 
+        scale_for_images = ColorScale.from_image(scale_path)
+
+        def cnn_factory():
+            return KerasRegressor(
+                lambda: build_cnn(image_size=config.IMAGE_SIZE),
+                epochs=config.CNN_EPOCHS,
+                augment=augment_batch,
+                augment_rounds=config.CNN_AUGMENT_ROUNDS,
+                # Temperature maps are already scaled to [0, 1]; per-pixel
+                # standardisation over nine images divides by the near-zero
+                # spread of background pixels and diverges.
+                standardise="none",
+            )
+
+        # White sits nearest the hot end of the colour scale, so an unmasked
+        # background reads as roughly 1000 °C. Both variants are evaluated so the
+        # cost of that artefact is measured rather than asserted.
         images = build_image_tensor(
-            table, ColorScale.from_image(scale_path), data_dir, image_size=config.IMAGE_SIZE
+            table, scale_for_images, data_dir, config.IMAGE_SIZE, mask_background=True
+        )
+        configure(seed=0)
+        record("cnn", cross_validate(cnn_factory, images, target, groups, baseline_mae))
+
+        unmasked = build_image_tensor(
+            table, scale_for_images, data_dir, config.IMAGE_SIZE, mask_background=False
         )
         configure(seed=0)
         record(
-            "cnn",
-            cross_validate(
-                lambda: KerasRegressor(
-                    lambda: build_cnn(image_size=config.IMAGE_SIZE),
-                    epochs=config.CNN_EPOCHS,
-                    augment=augment_batch,
-                    augment_rounds=config.CNN_AUGMENT_ROUNDS,
-                    # Temperature maps are already scaled to [0, 1]; per-pixel
-                    # standardisation over nine images divides by the near-zero
-                    # spread of background pixels and diverges.
-                    standardise="none",
-                ),
-                images,
-                target,
-                groups,
-                baseline_mae=baseline_mae,
-            ),
+            "cnn_unmasked_background",
+            cross_validate(cnn_factory, unmasked, target, groups, baseline_mae),
         )
 
+    attribution: dict = {}
     if include_neural:
         _export_demo_model(totals, target, models, predictions)
+        attribution = _explain(features, images, target, output_dir)
 
     # How much of the error is simply lack of data? Retrain on 2..n-1 groups.
     from .controls import shuffled_label_control
@@ -199,6 +209,7 @@ def run_evaluation(
     }
 
     results = {
+        "attribution": attribution,
         "colour_scale": scale_report,
         "error_decomposition": decomposition,
         "learning_curve": learning_curve,
@@ -244,6 +255,51 @@ def run_evaluation(
         output_dir, results, np.asarray(totals).ravel(), target, models, predictions
     )
     return results
+
+
+def _explain(features, images, target, output_dir) -> dict:
+    """Attribution for both architectures.
+
+    Permutation importance runs on the monotone network, which is the model that
+    consumes the three region temperatures separately — the reported model reads
+    only their sum, where permuting the single input is uninformative.
+
+    Occlusion runs on the convolutional model and answers a specific question:
+    does it attend to the engine at all, or has it merely memorised?
+    """
+    from .determinism import configure
+    from .estimators import KerasRegressor
+    from .explain import occlusion_map, permutation_importance
+    from .figures import plot_occlusion
+    from .models import build_cnn, build_monotone_mlp
+
+    configure(seed=0)
+    monotone = KerasRegressor(
+        lambda: build_monotone_mlp(n_features=features.shape[1]), epochs=config.MLP_EPOCHS
+    ).fit(features, target)
+    importance = permutation_importance(
+        monotone, features, target, names=PHYSICAL_FEATURES, rng=np.random.default_rng(0)
+    )
+
+    configure(seed=0)
+    cnn = KerasRegressor(
+        lambda: build_cnn(image_size=config.IMAGE_SIZE),
+        epochs=config.CNN_EPOCHS,
+        standardise="none",
+    ).fit(images, target)
+    hottest = int(np.argmin(target))
+    heatmap = occlusion_map(cnn, images[hottest], patch=16, stride=8)
+    plot_occlusion(images[hottest], heatmap, Path(output_dir) / "figures" / "occlusion.png")
+
+    return {
+        "permutation_importance": {k: round(float(v), 6) for k, v in importance.items()},
+        "occlusion": {
+            "model": "cnn",
+            "sample": f"{target[hottest]:g}h",
+            "max_sensitivity_h": round(float(heatmap.max()), 6),
+            "mean_sensitivity_h": round(float(heatmap.mean()), 6),
+        },
+    }
 
 
 def _export_demo_model(totals, target, models, predictions) -> None:
