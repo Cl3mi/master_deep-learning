@@ -28,7 +28,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reproduce the pipeline in the pinned container
-        run: docker compose up --build --exit-code-from reproduce reproduce
+        # The runner checks out as a different UID than the compose default, so
+        # pass the real one through or the container cannot write its outputs.
+        run: |
+          HOST_UID=$(id -u) HOST_GID=$(id -g) \
+            docker compose up --build --exit-code-from reproduce reproduce
 
       # The central reproducibility claim: a fresh container run must recreate
       # the committed results byte for byte. run_meta.json is deliberately not

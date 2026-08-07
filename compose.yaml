@@ -6,7 +6,7 @@ services:
     # determinism claim holds across Intel, Apple Silicon and CI alike.
     platform: linux/amd64
     # Without this, files written into ./reports are owned by root on the host.
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     volumes:
       # Default: the dataset vendored in this repository.
       #

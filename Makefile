@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-UID := $(shell id -u)
-GID := $(shell id -g)
-export UID
-export GID
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
+export HOST_UID
+export HOST_GID
 
 help:  ## Show available targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-18s %s\n", $$1, $$2}'
