@@ -1,0 +1,40 @@
+[project]
+name = "glys-rul"
+version = "1.0.0"
+description = "Remaining-useful-life estimation for Glys engine thermal imagery"
+requires-python = "==3.12.*"
+dependencies = [
+    "tensorflow-cpu==2.21.0",
+    "numpy==2.1.3",
+    "scipy==1.16.3",
+    "scikit-learn==1.9.0",
+    "pandas==2.3.3",
+    "matplotlib==3.10.7",
+    "pillow==12.3.0",
+    "optuna==4.9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "ruff==0.14.4"]
+
+[project.scripts]
+glys-rul = "glys_rul.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glys_rul"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = ["slow: touches the real dataset or trains a model"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
