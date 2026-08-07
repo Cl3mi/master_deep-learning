@@ -1,0 +1,28 @@
+services:
+  reproduce:
+    build: .
+    image: glys-rul:1.0.0
+    # Pinning the platform means every host runs the same instruction set, so the
+    # determinism claim holds across Intel, Apple Silicon and CI alike.
+    platform: linux/amd64
+    # Without this, files written into ./reports are owned by root on the host.
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      # Default: the dataset vendored in this repository.
+      #
+      # To run on your own data, change the left-hand path to point at your folder.
+      # It must contain images named like `047h.jpeg`, where the number is the
+      # remaining useful life in hours, plus the colour-scale reference `temp.png`.
+      - ./data/raw/triebwersbilder:/data:ro
+      - ./reports:/app/reports
+    command: ["reproduce"]
+
+  validate:
+    extends: reproduce
+    profiles: ["validate"]
+    command: ["validate"]
+
+  search:
+    extends: reproduce
+    profiles: ["search"]
+    command: ["search"]
