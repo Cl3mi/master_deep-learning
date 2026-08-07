@@ -17,7 +17,14 @@ import json
 import sys
 
 #: Models whose kernels dispatch on CPU features and so vary across machines.
-HARDWARE_DEPENDENT = {"cnn"}
+#: Every convolutional variant qualifies, so match by prefix rather than by an
+#: explicit list that a new ablation would silently fall outside of.
+HARDWARE_DEPENDENT_PREFIX = "cnn"
+
+
+def is_hardware_dependent(name: str) -> bool:
+    """True for models whose result depends on the host's SIMD capabilities."""
+    return name.startswith(HARDWARE_DEPENDENT_PREFIX)
 
 #: Relative tolerance allowed for those models. Observed across two machines: 1.5e-3.
 RELATIVE_TOLERANCE = 1e-2
@@ -50,7 +57,7 @@ def compare(golden: dict, fresh: dict) -> list[str]:
     for name in sorted(golden["models"]):
         for metric, want in golden["models"][name].items():
             got = fresh["models"][name][metric]
-            if name in HARDWARE_DEPENDENT:
+            if is_hardware_dependent(name):
                 scale = max(abs(want), 1e-9)
                 if abs(got - want) / scale > RELATIVE_TOLERANCE:
                     failures.append(
@@ -81,11 +88,12 @@ def main(argv: list[str]) -> int:
             print(f"  - {failure}")
         return 1
 
-    exact = [n for n in sorted(golden["models"]) if n not in HARDWARE_DEPENDENT]
+    exact = [n for n in sorted(golden["models"]) if not is_hardware_dependent(n)]
+    tolerated = [n for n in sorted(golden["models"]) if is_hardware_dependent(n)]
     print("Reproduction verified.")
     print(f"  exact:     {', '.join(EXACT_SECTIONS)}")
     print(f"  exact:     {', '.join(exact)}")
-    print(f"  tolerance: {', '.join(sorted(HARDWARE_DEPENDENT))} within {RELATIVE_TOLERANCE:.0e}")
+    print(f"  tolerance: {', '.join(tolerated)} within {RELATIVE_TOLERANCE:.0e}")
     return 0
 
 
