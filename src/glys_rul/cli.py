@@ -70,6 +70,7 @@ def _search(args, scale_path: Path) -> int:
         output=args.output,
         families=tuple(args.families),
         images=images,
+        max_epochs=args.max_epochs,
     )
     successful = frame[frame["status"] == "ok"]
     failed = len(frame) - len(successful)
@@ -94,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--output", type=Path, default=config.REPORTS_DIR / "experiments.csv")
     search.add_argument(
         "--families", nargs="+", default=["feature_mlp", "monotone_mlp", "cnn"]
+    )
+    search.add_argument(
+        "--max-epochs", type=int, default=None,
+        help="clip the sampled epoch budget to bound the campaign's runtime",
     )
 
     args = parser.parse_args(argv)
