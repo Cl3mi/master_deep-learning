@@ -100,6 +100,47 @@ says the remaining error is a *data* limitation rather than a modelling one.
 against a no-skill baseline of 33.28 h, i.e. very slightly *worse* than guessing the
 average. There is no residual signal left to memorise, so the 9.20 h result is genuine.
 
+## Optimisation campaign
+
+`docker compose --profile search run --rm search` searches the architecture families with
+Optuna and logs **every** trial — including failures — to
+[`reports/experiments.csv`](reports/experiments.csv). A ledger of only successes cannot
+distinguish a thorough search from a lucky one.
+
+42 trials, 42 successful:
+
+| Family | best MAE [h] | median | trials |
+|---|---:|---:|---:|
+| feature_mlp | **8.05** | 12.19 | 14 |
+| monotone_mlp | 12.56 | 15.89 | 14 |
+| cnn | 24.87 | 30.33 | 14 |
+
+| Input representation | best | median | trials |
+|---|---:|---:|---:|
+| Σ°C (summed) | **8.05** | **12.71** | 16 |
+| three region temperatures | 14.55 | 22.10 | 12 |
+
+**All ten leading configurations use the summed temperature.** Three separate region
+temperatures carry strictly more information and perform strictly worse — at eleven
+samples the sum is a physics-motivated reduction that regularises better than anything the
+optimiser can learn. Feature engineering beats model capacity here.
+
+Tuning also gave the CNN a fair hearing: 14 dedicated trials improved it from 41.8 to
+24.9 h, so its poor showing is not merely bad hyperparameters. It remains far behind an
+untuned linear regression.
+
+### Honest versus tuned
+
+| | MAE [h] | |
+|---|---:|---|
+| Reported result | **9.20** | configuration fixed *before* the search |
+| Campaign best | 8.05 | configuration *selected by* the score it reports |
+
+The headline figure is 9.20 h, not 8.05 h. The campaign's best was chosen by the same
+cross-validation that scores it, so quoting it would be selection bias — and at six
+effective samples that bias is not small. The 1.15 h gap between the two is itself a
+measurement of how much tuning flatters a model at this sample size.
+
 ## Rubric coverage
 
 | Requirement | Weight | Where |

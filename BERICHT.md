@@ -370,9 +370,39 @@ Durchsuchte Achsen: Eingaberepräsentation (Summe gegen drei Regionen), Tiefe un
 Lernrate, L2-Regularisierung, Epochenbudget, Verlustfunktion (`mse` gegen `huber`), für das
 CNN zusätzlich Filterzahl, Dropout und Augmentationsstärke.
 
-Die Werte der Kampagne sind **optimistisch**: Konfigurationen werden mit derselben
-Kreuzvalidierung ausgewählt, mit der sie berichtet werden. Die ehrliche Zahl bleibt die aus
-`results.json`, erzeugt mit einer vorab festgelegten Konfiguration.
+### 7.1 Ergebnisse — 42 Versuche, 42 erfolgreich
+
+| Familie | bester MAE [h] | Median | Versuche |
+|---|---:|---:|---:|
+| feature_mlp | **8,05** | 12,19 | 14 |
+| monotone_mlp | 12,56 | 15,89 | 14 |
+| cnn | 24,87 | 30,33 | 14 |
+
+| Eingaberepräsentation | bester MAE | Median | Versuche |
+|---|---:|---:|---:|
+| Σ °C (Summe) | **8,05** | **12,71** | 16 |
+| drei Regionstemperaturen | 14,55 | 22,10 | 12 |
+
+**Alle zehn führenden Konfigurationen verwenden die Summe.** Die drei getrennten
+Temperaturen enthalten strikt mehr Information und schneiden strikt schlechter ab — die in
+§4 aus drei Seeds gewonnene Beobachtung ist damit durch eine systematische Suche bestätigt.
+
+Auch das CNN bekam eine faire Chance: 14 eigene Versuche verbesserten es von 41,8 auf
+24,9 h. Sein schwaches Abschneiden liegt also nicht an schlecht gewählten
+Hyperparametern — es bleibt deutlich hinter einer ungetunten linearen Regression zurück.
+
+### 7.2 Ehrlich gegen getunt
+
+| | MAE [h] | |
+|---|---:|---|
+| Berichtetes Ergebnis | **9,20** | Konfiguration **vor** der Suche festgelegt |
+| Bester Kampagnenwert | 8,05 | Konfiguration **durch** den berichteten Wert ausgewählt |
+
+Als Ergebnis wird bewusst 9,20 h berichtet und nicht 8,05 h. Der Kampagnenbestwert wurde
+mit derselben Kreuzvalidierung ausgewählt, mit der er bewertet wird; ihn als Ergebnis
+auszugeben wäre ein Selektionsfehler, der bei sechs effektiven Beispielen nicht klein ist.
+Die Differenz von 1,15 h ist selbst ein Messwert dafür, wie stark Tuning ein Modell bei
+dieser Stichprobengröße schmeichelt.
 
 ---
 
