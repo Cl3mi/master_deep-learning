@@ -41,7 +41,7 @@ a factor of seventeen, entirely from being allowed to look up the answer.
 ## Quickstart
 
 ```bash
-docker compose up          # full reproduction, ~6 min, writes reports/
+docker compose up          # full reproduction, ~17 min, writes reports/
 ```
 
 Or without Docker:
@@ -77,7 +77,8 @@ out one content group entirely, so no model is ever scored on an image it has se
 
 | Model | MAE [h] | RMSE [h] | R² | Skill |
 |---|---:|---:|---:|---:|
-| **feature_mlp** | **9.20** | **10.99** | **0.879** | **0.724** |
+| **feature_mlp** (5 seeds) | **10.77 ± 1.23** | — | — | **0.676** |
+| feature_mlp (seed 0 only) | 9.20 | 10.99 | 0.879 | 0.724 |
 | isotonic | 11.68 | 13.07 | 0.829 | 0.649 |
 | linear | 11.92 | 12.65 | 0.840 | 0.642 |
 | monotone_mlp | 20.65 | 24.54 | 0.397 | 0.379 |
@@ -88,6 +89,13 @@ out one content group entirely, so no model is ever scored on an image it has se
 
 *Irreducible floor: MAE 1.364 h · RMSE 1.492 h.*
 
+**Read the seed spread before the headline.** A single run is dominated by initialisation
+noise at eleven samples: across ten seeds the same model ranges from 7.99 to 14.80 h
+(mean 11.01, sd 1.96). The reported figure is therefore the mean ± sd over five seeds, and
+the neural model's ~0.9 h margin over isotonic regression — which is deterministic at
+11.68 h — **sits inside one standard deviation**. It is better in expectation; it is not
+cleanly separable from seed noise at this sample size.
+
 ![Baseline ladder](reports/figures/ladder.png)
 ![Predicted versus actual](reports/figures/predicted_vs_actual.png)
 
@@ -96,6 +104,10 @@ Two supporting results:
 **Learning curve** — cross-validated MAE against the number of training groups:
 55.0 → 27.0 → 17.9 → 10.2 h for 2 → 5 groups. Steeply descending with no plateau, which
 says the remaining error is a *data* limitation rather than a modelling one.
+
+**Seed stability** — feature_mlp 10.77 ± 1.23 h, monotone_mlp 20.38 ± 0.34 h over five
+seeds. The monotone constraint costs accuracy and buys almost a four-fold reduction in
+spread.
 
 **Shuffled-label control** — with labels randomly permuted the model scores 34.46 h
 against a no-skill baseline of 33.28 h, i.e. very slightly *worse* than guessing the

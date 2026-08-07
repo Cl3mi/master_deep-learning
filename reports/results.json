@@ -72,6 +72,34 @@
       "mae": 10.207692
     }
   ],
+  "model_inputs": {
+    "cnn": [
+      "temperature_map_64x64_masked"
+    ],
+    "cnn_unmasked_background": [
+      "temperature_map_64x64"
+    ],
+    "feature_mlp": [
+      "total_c"
+    ],
+    "isotonic": [
+      "total_c"
+    ],
+    "linear": [
+      "total_c"
+    ],
+    "mean": [
+      "total_c"
+    ],
+    "monotone_mlp": [
+      "cone_c",
+      "body_c",
+      "pylon_c"
+    ],
+    "nearest_neighbour": [
+      "total_c"
+    ]
+  },
   "modelling_features": [
     "cone_c",
     "body_c",
@@ -232,6 +260,30 @@
       100.0,
       78.0
     ]
+  },
+  "seed_sweep": {
+    "feature_mlp": {
+      "mae_mean": 10.765420393510299,
+      "mae_std": 1.2336672639560737,
+      "n_seeds": 5.0,
+      "r2_mean": 0.8386604369340386,
+      "r2_std": 0.03428704509075345,
+      "rmse_mean": 12.62357500840994,
+      "rmse_std": 1.3479282569372695,
+      "skill_mean": 0.676498218558956,
+      "skill_std": 0.03707180425911407
+    },
+    "monotone_mlp": {
+      "mae_mean": 20.377972342751242,
+      "mae_std": 0.3422496769366343,
+      "n_seeds": 5.0,
+      "r2_mean": 0.41230094936415906,
+      "r2_std": 0.010485515893455167,
+      "rmse_mean": 24.228913611119417,
+      "rmse_std": 0.21636017512528652,
+      "skill_mean": 0.3876402301009643,
+      "skill_std": 0.010284631360366333
+    }
   },
   "shuffled_label_control": {
     "mae": 34.457771,

@@ -22,7 +22,7 @@ from .baselines import BASELINES
 from .colorscale import ColorScale
 from .features import DIAGNOSTIC_FEATURES, PHYSICAL_FEATURES, degenerate_columns, extract
 from .io import load_rgb
-from .train import cross_validate
+from .train import cross_validate, cross_validate_seeds
 
 
 def build_feature_table(
@@ -94,6 +94,7 @@ def run_evaluation(
 
     models: dict[str, dict] = {}
     predictions: dict[str, list[float]] = {}
+    seed_sweep: dict[str, dict] = {}
 
     def record(name: str, result) -> None:
         models[name] = {key: round(value, 6) for key, value in result.metrics.items()}
@@ -126,6 +127,16 @@ def run_evaluation(
                     groups,
                     baseline_mae=baseline_mae,
                 ),
+            )
+            # A single run is dominated by initialisation noise at this sample
+            # size, so the reportable figure is the spread across seeds.
+            seed_sweep[name] = cross_validate_seeds(
+                lambda b=builder, s=0: KerasRegressor(b, epochs=config.MLP_EPOCHS, seed=s),
+                matrix,
+                target,
+                groups,
+                seeds=config.SEEDS,
+                baseline_mae=baseline_mae,
             )
 
         from .dataset import augment_batch, build_image_tensor
@@ -165,7 +176,7 @@ def run_evaluation(
 
     attribution: dict = {}
     if include_neural:
-        _export_demo_model(totals, target, models, predictions)
+        _export_demo_model(totals, target, models, predictions, seed_sweep)
         attribution = _explain(features, images, target, output_dir)
 
     # How much of the error is simply lack of data? Retrain on 2..n-1 groups.
@@ -227,7 +238,15 @@ def run_evaluation(
         "excluded_features": degenerate_columns(
             table[list(DIAGNOSTIC_FEATURES)], relative_tolerance=0.05
         ),
+        "model_inputs": {
+            "feature_mlp": ["total_c"],
+            "monotone_mlp": list(modelling_columns),
+            "cnn": ["temperature_map_64x64_masked"],
+            "cnn_unmasked_background": ["temperature_map_64x64"],
+            **{name: ["total_c"] for name in BASELINES},
+        },
         "modelling_features": modelling_columns,
+        "seed_sweep": seed_sweep,
         "models": models,
         "out_of_fold_predictions": predictions,
         "labels": [float(value) for value in target],
@@ -302,7 +321,7 @@ def _explain(features, images, target, output_dir) -> dict:
     }
 
 
-def _export_demo_model(totals, target, models, predictions) -> None:
+def _export_demo_model(totals, target, models, predictions, sweep) -> None:
     """Refit the reported model on all data and export it for the browser demo.
 
     The interval half-width comes from the *out-of-fold* residuals, not from the
@@ -325,7 +344,9 @@ def _export_demo_model(totals, target, models, predictions) -> None:
         config.WEB_DIR / "model.json",
         ["total_c"],
         model="feature_mlp",
-        cv_mae=models["feature_mlp"]["mae"],
+        # Advertise the seed-averaged figure, not the single favourable draw.
+        cv_mae=round(float(sweep["feature_mlp"]["mae_mean"]), 6),
+        cv_mae_std=round(float(sweep["feature_mlp"]["mae_std"]), 6),
         interval_halfwidth=round(float(residual_quantile(residuals)), 4),
         coverage=int(round((1.0 - config.CONFORMAL_ALPHA) * 100)),
         # The demo flags inputs outside this range: the model has seen six

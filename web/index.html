@@ -255,7 +255,8 @@ fetch('model.json')
   .then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
   .then(d=>{
     MODEL=d;
-    $('provenance').textContent=`${d.model||'feature_mlp'} · cross-validated MAE ${(d.cv_mae??0).toFixed(2)} h`;
+    $('provenance').textContent=`${d.model||'feature_mlp'} · cross-validated MAE ${(d.cv_mae??0).toFixed(2)}`
+      + `${d.cv_mae_std ? ' ± ' + d.cv_mae_std.toFixed(2) : ''} h`;
     update();
   })
   .catch(()=>{ $('provenance').textContent='model.json not found — run the pipeline'; });

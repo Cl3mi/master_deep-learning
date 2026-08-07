@@ -21,14 +21,21 @@ eindeutige Bilder.** Fünf Paare sind byteidentisch, tragen aber unterschiedlich
 Daraus folgt eine beweisbare Fehleruntergrenze von **MAE 1,364 h** und die Notwendigkeit,
 alle Datenaufteilungen nach Bildinhalt statt nach Dateiname zu gruppieren.
 
-Das beste Modell erreicht **MAE 9,20 h** (Skill 0,724) in gruppierter
-Kreuzvalidierung. Es ist ein neuronales Netz mit 209 Parametern auf einem einzigen
-physikalischen Merkmal und schlägt vier Baselines, darunter eine, die eigens die monotone
-Physik ausnutzt.
+Das beste Modell erreicht **MAE 10,77 ± 1,23 h** über fünf Seeds (Einzellauf mit Seed 0:
+9,20 h). Es ist ein neuronales Netz mit **177 Parametern** auf einem einzigen
+physikalischen Merkmal.
+
+**Wichtige Einordnung:** Die isotone Regression erreicht deterministisch 11,68 h. Der
+Vorsprung des Netzes beträgt damit rund 0,9 h und liegt **innerhalb einer
+Standardabweichung** der Seed-Streuung. Das Netz ist im Erwartungswert besser, aber der
+Abstand ist bei elf Beispielen nicht klar von Initialisierungsrauschen zu trennen. Ein
+einzelner Lauf (etwa die 9,20 h aus Seed 0) würde diesen Vorsprung deutlich überzeichnen —
+über zehn Seeds gemessen liegt Seed 0 auf Rang 2 von 10.
 
 | Modell | MAE [h] | RMSE [h] | R² | Skill |
 |---|---:|---:|---:|---:|
-| **feature_mlp** | **9,20** | **10,99** | **0,879** | **0,724** |
+| **feature_mlp** (5 Seeds) | **10,77 ± 1,23** | — | — | **0,676** |
+| feature_mlp (nur Seed 0) | 9,20 | 10,99 | 0,879 | 0,724 |
 | isotonic | 11,68 | 13,07 | 0,829 | 0,649 |
 | linear | 11,92 | 12,65 | 0,840 | 0,642 |
 | monotone_mlp | 20,65 | 24,54 | 0,397 | 0,379 |
@@ -137,7 +144,7 @@ und nie trainiert.
 
 ## 2. Reproduzierbare Umgebung (10 %)
 
-`docker compose up` führt die vollständige Pipeline aus (gemessen 5 min 17 s). Ohne Docker
+`docker compose up` führt die vollständige Pipeline aus (gemessen 17 min 01 s; der Seed-Sweep über fünf Seeds dominiert die Laufzeit). Ohne Docker
 funktioniert `uv sync && uv run glys-rul reproduce` aus derselben Lockdatei.
 
 **Der Determinismus-Stack.** Jede Maßnahme beseitigt eine dokumentierte Quelle von
@@ -312,13 +319,31 @@ das ein vertretbarer Tausch, für die reine Punktgenauigkeit nicht.
 | Zielskalierung | RUL / 100 | hält den Verlust in einem stabilen Bereich |
 | Batchgröße | voller Datensatz | bei 9–10 Trainingsbeispielen ist alles andere künstlich |
 | Kreuzvalidierung | Leave-One-Group-Out über 6 Hash-Gruppen | siehe §1.1 |
-| Seeds | 5 Seeds, Mittelwert ± Streuung | Einzelläufe sind bei n = 11 reines Rauschen |
+| Seeds | 5 Seeds, Mittelwert ± Streuung (`train.cross_validate_seeds`) | Einzelläufe sind bei n = 11 reines Rauschen |
 | Early Stopping | **keines** | siehe unten |
 
 **Kein Early Stopping — und warum das die ehrlichere Wahl ist.** Bei Leave-One-Group-Out
 enthält jede Faltung genau eine ausgelassene Gruppe. Ein Abbruchkriterium darauf zu stützen
 hieße, die Testdaten in die Trainingsentscheidung einzubeziehen. Das Epochenbudget wurde
 deshalb vorab festgelegt und nicht anhand der ausgelassenen Faltung angepasst.
+
+### 5.1 Seed-Stabilität — warum ein Einzellauf nicht berichtbar ist
+
+Über die fünf konfigurierten Seeds:
+
+| Modell | MAE [h] | Streuung |
+|---|---:|---:|
+| feature_mlp | 10,77 | ± 1,23 |
+| monotone_mlp | 20,38 | ± 0,34 |
+
+Zehn Seeds gemessen: Mittelwert 11,01, Streuung 1,96, Spanne 7,99 bis 14,80. Der Abstand
+zwischen bestem und schlechtestem Lauf beträgt fast 7 Stunden — bei einem Modell, dessen
+Vorsprung gegenüber der besten Baseline knapp 1 Stunde ausmacht. Deshalb wird der
+Mittelwert mit Streuung berichtet und nicht der beste Lauf.
+
+Bemerkenswert: das monotone Netz streut mit ± 0,34 h fast viermal weniger. Die strukturelle
+Beschränkung wirkt als starker Regularisierer — sie kostet Genauigkeit und kauft dafür
+Verlässlichkeit.
 
 **Standardisierung und Zielskalierung werden innerhalb der Faltung geschätzt.** Über den
 gesamten Datensatz berechnete Statistiken trügen bei elf Beispielen einen sichtbaren
@@ -520,7 +545,7 @@ Farbskala ist nicht helligkeitsmonoton, und die Flächenmerkmale verraten die Te
 
 Aus dieser Analyse folgte alles Weitere — Gruppierung nach Bildinhalt, eine beweisbare
 Fehleruntergrenze als Bezugsgröße, das Verbot photometrischer Augmentation und die
-Erkenntnis, dass ein Netz mit 209 Parametern auf einem einzigen physikalisch motivierten
+Erkenntnis, dass ein Netz mit 177 Parametern auf einem einzigen physikalisch motivierten
 Merkmal ein CNN mit 25 745 Parametern deutlich schlägt.
 
 Der Vorsprung des besten Modells ist dabei präzise lokalisierbar: Im Inneren des
@@ -529,7 +554,9 @@ ausschließlich an den beiden Rändern, weil das Netz extrapoliert, während die
 Regression konstruktionsbedingt kappt. Bei sechs Zuständen, von denen jede Faltung einen
 Randzustand vorhersagen muss, entscheidet genau diese Eigenschaft.
 
-Das Ergebnis von **9,20 h MAE** liegt weit über der Untergrenze von 1,364 h. Die Lernkurve
+Das Ergebnis von **10,77 ± 1,23 h MAE** liegt weit über der Untergrenze von 1,364 h — und
+der Vorsprung gegenüber der isotonen Regression (11,68 h) liegt innerhalb einer
+Standardabweichung. Die Lernkurve
 zeigt, warum: mit sechs unterscheidbaren Zuständen ist die Aufgabe datenbegrenzt, nicht
 modellbegrenzt. Die ehrlichste Empfehlung an die Glys lautet daher nicht „ein größeres
 Netz", sondern **mehr thermische Zustände messen**.

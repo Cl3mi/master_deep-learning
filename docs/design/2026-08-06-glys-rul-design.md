@@ -282,7 +282,7 @@ at runtime. `make validate` runs the audit alone and prints the contract report.
 ### 7.1 Execution
 
 ```bash
-docker compose up                        # full reproduction, ~6 min (measured 5m37s)
+docker compose up                        # full reproduction, ~17 min (measured 17m01s)
 docker compose --profile search up       # optimisation campaign, ~40 min
 docker compose --profile lab up          # Jupyter
 uv sync && make reproduce                # non-Docker fallback, same lockfile
@@ -358,8 +358,13 @@ arm connecting to Megatutorial 3.
 
 ### Training protocol
 
-- **Nested grouped CV.** Outer LOGO over the 6 hash groups; hyperparameter search runs in
-  an inner loop over the remaining 5. The outer fold never informs tuning.
+- **Grouped LOGO over the 6 hash groups.** *Amended after implementation:* the design
+  originally specified nested CV. Nested CV is required when model selection happens
+  inside the evaluation loop; here the reported configuration is fixed **before** any
+  search runs, so plain grouped LOGO is already an unbiased estimate of it and an inner
+  loop would answer a different question. Selection bias is instead handled by reporting
+  the campaign's tuned score separately and labelling it optimistic — see §9. The gap
+  between the two is published rather than hidden inside a nesting.
 - **Reported honestly.** Both the nested (honest) and best-tuned (optimistic) scores are
   published side by side; the gap between them is itself a finding about selection bias
   at n = 11.
@@ -433,9 +438,12 @@ bare point estimate. Correct practice at n = 11, beyond course scope, ~50 lines,
 renders as the demo's uncertainty band.
 
 ### 11.3 Counterfactual maintenance thresholds
-"To gain 20 more operating hours, pylon temperature must fall below X °C." Falls out of
-the monotone model almost free and answers the question the Glys actually asked — turning
-a regressor into decision support.
+"To reach N more operating hours, total thermal load must fall below X °C."
+
+*Delivered in the demo* (`web/index.html`, `requiredTotal`), which is where it is useful —
+it updates live as the sliders move. The Python module written for it was redundant once
+the demo carried the logic, and was removed rather than left as dead code in a graded
+repository.
 
 ### 11.4 Occlusion saliency
 Occlusion-based attribution showing whether the CNN attends to the pylon on high-RUL
@@ -522,8 +530,9 @@ chore(release): tag submission
 4. No train/test split separates two files sharing an md5.
 5. Both architectures train, and the baseline ladder is reported with floors on every plot.
 6. `experiments.csv` contains the full campaign including failed configurations.
-7. The best model's honest nested-CV MAE is reported against the 1.364 h floor, with the
-   optimistic tuned score shown alongside.
+7. The best model's MAE is reported as **mean ± sd over the configured seeds**, from a
+   configuration fixed before any search, against the 1.364 h floor — with the campaign's
+   tuned score shown alongside and labelled optimistic.
 8. README closes with a metric glossary explaining each score and its derivation.
 9. `BERICHT.md` covers all six rubric items in German.
 10. The demo page loads from GitHub Pages and predicts without a backend.

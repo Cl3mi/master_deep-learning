@@ -46,6 +46,17 @@ EXACT_SECTIONS = (
 )
 
 
+def _flatten(section: dict, prefix: str = "") -> dict:
+    """Flatten one level of nesting into dotted keys."""
+    flat = {}
+    for key, value in section.items():
+        if isinstance(value, dict):
+            flat.update(_flatten(value, f"{prefix}{key}."))
+        else:
+            flat[f"{prefix}{key}"] = value
+    return flat
+
+
 def compare(golden: dict, fresh: dict) -> list[str]:
     """Return a list of human-readable failures; empty means the run reproduced."""
     failures: list[str] = []
@@ -53,6 +64,23 @@ def compare(golden: dict, fresh: dict) -> list[str]:
     for section in EXACT_SECTIONS:
         if golden.get(section) != fresh.get(section):
             failures.append(f"{section}: differs, but must be exactly reproducible")
+
+    # Sections derived from trained models: compared, but at the dense tolerance,
+    # since they inherit the same hardware-dependent float variation.
+    for section in ("seed_sweep", "attribution"):
+        for key, want in _flatten(golden.get(section, {})).items():
+            got = _flatten(fresh.get(section, {})).get(key)
+            if got is None:
+                failures.append(f"{section}.{key}: missing from the fresh run")
+            elif isinstance(want, (int, float)) and not isinstance(want, bool):
+                scale = max(abs(want), 1e-9)
+                if abs(got - want) / scale > CONVOLUTIONAL_TOLERANCE:
+                    failures.append(
+                        f"{section}.{key}: {got} vs {want} "
+                        f"(relative {abs(got - want) / scale:.2e} > {CONVOLUTIONAL_TOLERANCE:.0e})"
+                    )
+            elif got != want:
+                failures.append(f"{section}.{key}: {got} vs {want}")
 
     if set(golden["models"]) != set(fresh["models"]):
         failures.append(
