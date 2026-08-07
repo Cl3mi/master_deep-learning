@@ -73,8 +73,31 @@ class ColorScale:
     def to_map(self, image: np.ndarray) -> np.ndarray:
         """Map every pixel of an H×W×3 image to degrees Celsius."""
         flat = image.reshape(-1, 3)
-        _, indices = self._tree.query(flat, workers=1)
-        return self.temps[indices].reshape(image.shape[:2])
+        unique, inverse = self._unique_colours(flat)
+        _, indices = self._tree.query(unique, workers=1)
+        return self.temps[indices][inverse].reshape(image.shape[:2])
+
+    @staticmethod
+    def _unique_colours(flat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Distinct colours and the index mapping each pixel back to one.
+
+        A two-megapixel frame holds roughly a thousand distinct colours, so
+        querying uniques rather than pixels is about a hundred times faster for
+        identical output. The packed-integer path rounds, so it is used only when
+        the input really is integer RGB; anything else takes the exact path.
+        """
+        rounded = np.rint(flat)
+        if flat.size and np.array_equal(rounded, flat) and flat.min() >= 0 and flat.max() <= 255:
+            packed = rounded.astype(np.int64)
+            keys = (packed[:, 0] << 16) | (packed[:, 1] << 8) | packed[:, 2]
+            unique_keys, inverse = np.unique(keys, return_inverse=True)
+            unique = np.stack(
+                [(unique_keys >> 16) & 255, (unique_keys >> 8) & 255, unique_keys & 255],
+                axis=1,
+            ).astype(np.float64)
+            return unique, inverse.ravel()
+        unique, inverse = np.unique(flat, axis=0, return_inverse=True)
+        return unique, inverse.ravel()
 
     def max_roundtrip_error(self) -> float:
         """Largest temperature error incurred by inverting the bar's own colours.

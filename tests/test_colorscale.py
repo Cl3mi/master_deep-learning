@@ -71,3 +71,37 @@ def test_real_scale_luminance_is_not_monotone():
 
     assert luminance.argmax() < len(luminance) - 1, "luminance must peak before the hot end"
     assert luminance[-1] < luminance.max()
+
+
+def test_to_map_deduplicates_colours_before_querying(scale_image):
+    scale = ColorScale.from_image(scale_image)
+    image = np.zeros((40, 40, 3))
+    image[:20] = (255, 47, 145)
+
+    unique, inverse = scale._unique_colours(image.reshape(-1, 3))
+
+    assert len(unique) == 2
+    assert len(inverse) == 1600
+
+
+def test_to_map_matches_a_bruteforce_reference(scale_image):
+    scale = ColorScale.from_image(scale_image)
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 256, size=(12, 9, 3)).astype(float)
+
+    fast = scale.to_map(image)
+    reference = np.array([[scale.to_celsius(px) for px in row] for row in image])
+
+    assert np.array_equal(fast, reference)
+
+
+def test_to_map_is_exact_for_non_integer_input(scale_image):
+    """Augmented temperature maps are not integer-valued; the fast path must not round them."""
+    scale = ColorScale.from_image(scale_image)
+    image = np.full((6, 6, 3), 100.5)
+    image[0, 0] = (100.4, 100.6, 100.5)
+
+    fast = scale.to_map(image)
+    reference = np.array([[scale.to_celsius(px) for px in row] for row in image])
+
+    assert np.array_equal(fast, reference)
