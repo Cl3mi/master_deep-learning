@@ -23,7 +23,7 @@ satisfies it. A row without evidence is not done.
 | Requirement | Evidence | Done |
 |---|---|---|
 | Repo prepared so the code is reproducibly usable | `docker compose up` on a clean clone; non-Docker fallback via `uv sync` | ☑ |
-| Public repo, or mckoh added as member | repository visibility is public | ☐ (at publish) |
+| Public repo, or mckoh added as member | repository visibility is public: `Cl3mi/master_deep-learning` | ☑ |
 | Model estimates RUL from the temperature distribution | `features.py` region temperatures → `results.json` | ☑ |
 | Regression head `Dense(1, activation="linear")` | `models.py` | ☑ |
 | Regression loss `mse` | `estimators.py` | ☑ |
