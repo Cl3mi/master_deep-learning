@@ -2,120 +2,103 @@
 
 **Abschließende Projektarbeit — Industrial Computing (DIBSE 26), Teil 2**
 
-Alle Zahlen in diesem Bericht stammen aus den von der Pipeline erzeugten Artefakten —
-[`reports/results.json`](reports/results.json),
-[`reports/experiments.csv`](reports/experiments.csv),
-[`reports/features.csv`](reports/features.csv) und `web/model.json` — und sind nicht von
-Hand eingetragen. Reproduktion mit einem Befehl: `docker compose up`.
+Alle Zahlen stammen aus den von der Pipeline erzeugten Artefakten
+([`results.json`](reports/results.json), [`experiments.csv`](reports/experiments.csv),
+[`features.csv`](reports/features.csv), `web/model.json`) und sind nicht von Hand
+eingetragen. Reproduktion: `docker compose up`.
 
 ---
 
 ## 0. Zusammenfassung
 
-Aus einem Wärmebild eines Triebwerks soll die verbleibende Lebensdauer geschätzt werden.
-Die Aufgabe wurde als **Regressionsproblem** gelöst (`Dense(1, activation="linear")`,
-Verlustfunktion `mse`), zusätzlich wird die Vorhersage in 10-Stunden-Klassen dargestellt.
+Aus einem Wärmebild soll die verbleibende Lebensdauer geschätzt werden. Gelöst als
+**Regression** (`Dense(1, activation="linear")`, Loss `mse`), zusätzlich als
+10-Stunden-Klassen dargestellt (§6.5).
 
-Der zentrale Befund liegt vor jeder Modellierung: **die 11 Dateien enthalten nur 6
-eindeutige Bilder.** Fünf Paare sind byteidentisch, tragen aber unterschiedliche Labels.
-Daraus folgt eine beweisbare Fehleruntergrenze von **MAE 1,364 h** und die Notwendigkeit,
-alle Datenaufteilungen nach Bildinhalt statt nach Dateiname zu gruppieren.
+**Der zentrale Befund liegt vor jeder Modellierung: die 11 Dateien enthalten nur 6
+eindeutige Bilder.** Fünf Paare sind byteidentisch, tragen aber verschiedene Labels. Daraus
+folgen eine beweisbare Fehleruntergrenze von **MAE 1,364 h** und die Pflicht, alle
+Aufteilungen nach Bildinhalt statt nach Dateiname zu gruppieren.
 
-Das beste Modell erreicht **MAE 10,77 ± 1,23 h** über fünf Seeds (Einzellauf mit Seed 0:
-9,20 h). Es ist ein neuronales Netz mit **177 Parametern** auf einem einzigen
-physikalischen Merkmal.
+| Modell | MAE [h] | Skill | Eingabe |
+|---|---:|---:|---|
+| **feature_mlp** (5 Seeds) | **10,77 ± 1,23** | **0,676** | Σ °C |
+| isotonic | 11,68 | 0,649 | Σ °C |
+| linear | 11,92 | 0,642 | Σ °C |
+| monotone_mlp (5 Seeds) | 20,38 ± 0,34 | 0,388 | Konus/Körper/Pylon |
+| nearest_neighbour | 22,82 | 0,314 | Σ °C |
+| mean | 33,28 | 0,000 | — |
+| cnn | 41,07 | −0,234 | Temperaturkarte 64×64 |
+| cnn_unmasked_background | 47,01 | −0,413 | dito, Hintergrund unmaskiert |
 
-**Wichtige Einordnung:** Die isotone Regression erreicht deterministisch 11,68 h. Der
-Vorsprung des Netzes beträgt damit rund 0,9 h und liegt **innerhalb einer
-Standardabweichung** der Seed-Streuung. Das Netz ist im Erwartungswert besser, aber der
-Abstand ist bei elf Beispielen nicht klar von Initialisierungsrauschen zu trennen. Ein
-einzelner Lauf (etwa die 9,20 h aus Seed 0) würde diesen Vorsprung deutlich überzeichnen —
-über zehn Seeds gemessen liegt Seed 0 auf Rang 2 von 10.
+Neuronale Zeilen sind Mittelwert ± Streuung über fünf Seeds (`results.json → seed_sweep`);
+der `models`-Block derselben Datei enthält den Einzellauf mit Seed 0 (feature_mlp 9,20 h,
+monotone_mlp 20,65 h), aus dem Abbildungen und Out-of-Fold-Vorhersagen stammen.
 
-| Modell | MAE [h] | RMSE [h] | R² | Skill |
-|---|---:|---:|---:|---:|
-| **feature_mlp** (5 Seeds) | **10,77 ± 1,23** | — | — | **0,676** |
-| feature_mlp (nur Seed 0) | 9,20 | 10,99 | 0,879 | 0,724 |
-| isotonic | 11,68 | 13,07 | 0,829 | 0,649 |
-| linear | 11,92 | 12,65 | 0,840 | 0,642 |
-| monotone_mlp | 20,65 | 24,54 | 0,397 | 0,379 |
-| nearest_neighbour | 22,82 | 23,04 | 0,469 | 0,314 |
-| mean | 33,28 | 37,82 | −0,432 | 0,000 |
-| cnn | 41,07 | 54,10 | −1,933 | −0,234 |
-| cnn_unmasked_background | 47,01 | 54,19 | −1,942 | −0,413 |
+Das beste Modell ist ein Netz mit **177 Parametern** auf einem einzigen physikalischen
+Merkmal. **Einordnung:** Die isotone Regression erreicht deterministisch 11,68 h; der
+Vorsprung von rund 0,9 h liegt damit **innerhalb einer Standardabweichung** der
+Seed-Streuung. Im Erwartungswert besser, aber bei elf Beispielen nicht sauber von
+Initialisierungsrauschen zu trennen (§5.1).
 
 ---
 
 ## 1. Feature-Extraction (25 %)
 
-### 1.1 Datenaudit: Duplikate und ihre Folgen
-
-Vor jeder Merkmalsberechnung wurden die Dateien nach Inhalt gehasht:
+### 1.1 Datenaudit
 
 | Dateien | Labels | md5 |
 |---|---|---|
-| `003h` = `005h` | 3 h, 5 h | `87558f…` |
-| `024h` = `026h` | 24 h, 26 h | `4dac2b…` |
-| `047h` = `051h` | 47 h, 51 h | `8b2bf8…` |
-| `073h` = `076h` | 73 h, 76 h | `bc54a4…` |
-| `078h` = `082h` | 78 h, 82 h | `1b3259…` |
-| `100h` | 100 h | `c2ee1e…` |
+| `003h` = `005h` | 3, 5 | `87558f…` |
+| `024h` = `026h` | 24, 26 | `4dac2b…` |
+| `047h` = `051h` | 47, 51 | `8b2bf8…` |
+| `073h` = `076h` | 73, 76 | `bc54a4…` |
+| `078h` = `082h` | 78, 82 | `1b3259…` |
+| `100h` | 100 | `c2ee1e…` |
 
-Zwei Konsequenzen bestimmen den Rest der Arbeit.
+**Datenlecks.** Bei Aufteilung nach Dateinamen liegt beim Testen von `005h` das
+pixelgleiche `003h` im Training — ein Leck, das keine Metrik anzeigt. Alle Aufteilungen
+gruppieren nach md5 (`dataset.grouped_splits`).
 
-**Erstens: Datenlecks.** Wird nach Dateinamen aufgeteilt, liegt beim Testen von `005h`
-das pixelgleiche `003h` im Trainingssatz. Das ist ein Leck, das keine Metrik anzeigt.
-Alle Aufteilungen gruppieren deshalb nach md5-Hash (`dataset.grouped_splits`).
-
-**Zweitens: eine beweisbare Fehleruntergrenze.** Identische Pixel mit verschiedenen Labels
-sind durch keine Funktion des Bildes unterscheidbar. Die bestmögliche Vorhersage für ein
-Paar ist eine Konstante — der Median minimiert den MAE, der Mittelwert den RMSE:
+**Fehleruntergrenze.** Identische Pixel mit verschiedenen Labels sind durch keine Funktion
+des Bildes unterscheidbar; die beste Vorhersage pro Paar ist eine Konstante — der Median
+minimiert MAE, der Mittelwert RMSE:
 
 ```
-MAE-Untergrenze  = 15   / 11      = 1,364 h
-RMSE-Untergrenze = √(24,5 / 11)   = 1,492 h
+MAE  = 15   / 11      = 1,364 h
+RMSE = √(24,5 / 11)   = 1,492 h
 ```
 
-Berechnet zur Laufzeit in `audit.error_floors`, nicht fest verdrahtet. Ein Modell, das
-diese Werte unterbietet, hat memoriert oder ein Leck — ein Test bricht den Build ab, falls
-das passiert.
+Zur Laufzeit berechnet (`audit.error_floors`), nicht fest verdrahtet. Ein Test bricht den
+Build ab, falls ein Modell diese Werte unterbietet.
 
-**Wie groß der Unterschied ist:** Nearest-Neighbour erreicht **1,36 h** auf den
-Trainingsdaten und **22,82 h** in gruppierter Kreuzvalidierung. Faktor 17, allein weil das
-Nachschlagen der Antwort unterbunden wird.
+**Größenordnung:** Nearest-Neighbour erreicht **1,36 h** in-sample und **22,82 h** in
+gruppierter Kreuzvalidierung — Faktor 17, allein weil das Nachschlagen unterbunden wird.
 
 ### 1.2 Kalibrierung der Temperaturskala
 
-Die Farbskala `temp.png` wird automatisch erkannt und in eine Nachschlagetabelle mit 3685
-Einträgen überführt (`colorscale.ColorScale`).
+`temp.png` wird automatisch erkannt und in eine Tabelle mit **3685 Einträgen** überführt.
 
-**Falle 1 — Alphakanal.** `temp.png` ist RGBA. Ein naives `.convert("RGB")` rendert
-transparente Pixel **schwarz**, und Schwarz ist hier eine gültige Temperatur (0 °C). Der
-Fehler zerstört die Kalibrierung lautlos. Alle Bilder werden deshalb zuerst über Weiß
-komponiert (`io.load_rgb`, der einzige Ort im Code, der PIL verwendet).
-
-**Falle 2 — Helligkeit ist nicht monoton.** Die Luminanz der Skala steigt bis **189 bei
-825 °C** und fällt danach auf **124 bei 1200 °C**. Der heiße Bereich wird über den Farbton
-unterschieden, nicht über die Helligkeit. Eine Graustufenumwandlung würde das Signal
-zerstören, und die Intuition „heller = heißer" ist oberhalb von 825 °C schlicht falsch.
+| Falle | Konsequenz |
+|---|---|
+| **Alphakanal** — `temp.png` ist RGBA; `.convert("RGB")` rendert transparente Pixel **schwarz**, und Schwarz ist eine gültige Temperatur (0 °C) | Alle Bilder werden zuerst über Weiß komponiert (`io.load_rgb`, der einzige Ort mit PIL-Zugriff) |
+| **Luminanz ist nicht monoton** — Maximum 189 bei 825 °C, Abfall auf 124 bei 1200 °C | Graustufen zerstören das Signal; „heller = heißer" ist oberhalb 825 °C falsch |
 
 **Invertierbarkeit wird erzwungen, nicht angenommen.** Eine Nachschlagetabelle ist nur
-dann sinnvoll, wenn verschiedene Temperaturen verschiedene Farben haben. `ColorScale`
-prüft das bei der Konstruktion und verweigert sonst den Dienst. Gemessen: **maximaler
-Rundlauffehler 12,7 °C, keine mehrdeutigen Stützstellen.**
+sinnvoll, wenn verschiedene Temperaturen verschiedene Farben haben. `ColorScale` prüft das
+bei der Konstruktion und verweigert sonst den Dienst. Gemessen: **Rundlauffehler 12,7 °C,
+keine mehrdeutigen Stützstellen.**
 
 ### 1.3 Segmentierung
 
-Die Geometrie ist über den gesamten Datensatz identisch; nur die Farbe ändert sich.
-Regionen werden daher über Zusammenhangskomponenten bestimmt und nach der x-Position
-sortiert: Einlasskonus, Hauptkörper, Pylon. **Alle 11 Bilder liefern exakt 3 Komponenten**,
-ohne Störpixel. Vor der Farbmessung werden die Masken um 4 Pixel erodiert, um
-JPEG-Artefakte an den Kanten auszuschließen.
+Geometrie identisch, nur Farbe variiert — Regionen daher über Zusammenhangskomponenten,
+nach x-Position sortiert: Konus, Körper, Pylon. **Alle 11 Bilder liefern exakt 3
+Komponenten**, ohne Störpixel. Masken werden vor der Farbmessung um 4 px erodiert
+(JPEG-Kantenartefakte).
 
-### 1.4 Merkmale — und bewusst ausgeschlossene Merkmale
+### 1.4 Merkmale und bewusste Ausschlüsse
 
-Pro Region wird der **Median** der Farbe verwendet (robust gegen Restartefakte) und über
-die Skala in °C umgerechnet. Ergebnis:
+Pro Region der **Median** der Farbe (robust gegen Restartefakte), über die Skala in °C:
 
 | RUL | Konus | Körper | Pylon | Σ °C |
 |---|---:|---:|---:|---:|
@@ -126,186 +109,140 @@ die Skala in °C umgerechnet. Ergebnis:
 | 78 / 82 h | 0 | 0 | 657 | 658 |
 | 100 h | 0 | 0 | 0 | 1 |
 
-Der Datensatz verwendet nur **vier verschiedene Temperaturen**: {0,33 · 657,33 · 827,36 ·
-1193,81} °C. Der thermische Zustand ist ein Wort aus drei Symbolen über einem Alphabet mit
-vier Buchstaben; 6 von 64 möglichen Zuständen kommen vor. Die Wärme wandert von vorne nach
-hinten, der Pylon kühlt zuletzt ab.
+Nur **vier verschiedene Temperaturen** {0,33 · 657,33 · 827,36 · 1193,81} °C: der
+thermische Zustand ist ein Wort aus drei Symbolen über einem Alphabet mit vier Buchstaben,
+6 von 64 möglichen Zuständen kommen vor. Die Wärme wandert von vorne nach hinten.
 
-**Flächenmerkmale werden berechnet, aber ausgeschlossen.** Da sich die Geometrie nie
-ändert, sollten die Flächen konstant sein. Sie sind es fast: die erodierte Konusfläche
-nimmt genau drei Werte an — 138 840 px bei 827 °C, 138 802 px bei 657 °C, 137 465 px bei
-0 °C. Die Fläche bildet die Temperatur **exakt ab**, weil die Weiß-Schwelle die
-kantengeglätteten Ränder heller und dunkler Regionen unterschiedlich behandelt. Ein Modell
-könnte daraus die Lebensdauer ableiten — über ein Artefakt des JPEG-Encoders, nicht über
-Physik. Die Spalten stehen in `reports/features.csv`, werden aber als degeneriert markiert
-und nie trainiert.
+**Flächenmerkmale werden berechnet, aber ausgeschlossen.** Die erodierte Konusfläche nimmt
+genau drei Werte an — 138 840 px bei 827 °C, 138 802 px bei 657 °C, 137 465 px bei 0 °C.
+Die Fläche bildet die Temperatur **exakt ab**, weil die Weiß-Schwelle kantengeglättete
+Ränder heller und dunkler Regionen unterschiedlich behandelt. Ein Modell könnte daraus die
+Lebensdauer ableiten — über ein Encoder-Artefakt, nicht über Physik.
 
 ---
 
 ## 2. Reproduzierbare Umgebung (10 %)
 
-`docker compose up` führt die vollständige Pipeline aus (gemessen 17 min 01 s; der Seed-Sweep über fünf Seeds dominiert die Laufzeit). Ohne Docker
-funktioniert `uv sync && uv run glys-rul reproduce` aus derselben Lockdatei.
-
-**Der Determinismus-Stack.** Jede Maßnahme beseitigt eine dokumentierte Quelle von
-Abweichungen:
+`docker compose up` führt die Pipeline aus (gemessen 17 min 01 s; der Seed-Sweep dominiert).
+Ohne Docker: `uv sync && uv run glys-rul reproduce` aus derselben Lockdatei.
 
 | Maßnahme | verhindert |
 |---|---|
 | Basis-Image über Digest gepinnt | stillschweigender Wechsel der Basis |
 | Abhängigkeiten aus `uv.lock` | Versionsdrift |
 | `platform: linux/amd64` | unterschiedliche Befehlssätze je Host |
-| `TF_ENABLE_ONEDNN_OPTS=0` | oneDNN wählt auf AVX2- und AVX-512-Hosts andere Kernel |
+| `TF_ENABLE_ONEDNN_OPTS=0` | oneDNN wählt je nach AVX2/AVX-512 andere Kernel |
 | `CUDA_VISIBLE_DEVICES=""` | nichtdeterministische cuDNN-Kernel |
-| ein Thread für intra/inter-op | Reihenfolge der Gleitkomma-Reduktion |
-| `keras.utils.set_random_seed` + `enable_op_determinism` | Initialisierung, Shuffling |
+| ein Thread intra/inter-op | Reihenfolge der Gleitkomma-Reduktion |
+| `set_random_seed` + `enable_op_determinism` | Initialisierung, Shuffling |
 
-CPU-Betrieb kostet hier nichts: bei 209 bzw. 25 745 Parametern und 11 Beispielen liegt der
-Aufwand im Sekundenbereich.
-
-**Nachgewiesen, nicht behauptet — und mit der Genauigkeit formuliert, die tatsächlich
-gilt.** Gemessen über zwei verschiedene Maschinen hinweg (dieser Host und ein
-GitHub-Runner):
+**Gemessen, nicht behauptet** — über zwei Maschinen (Host und GitHub-Runner):
 
 | Bestandteil | Reproduzierbarkeit |
 |---|---|
-| Datenaudit, Fehleruntergrenzen, Merkmale, Labels, Lernkurve, Kontrolle | **exakt** |
-| alle vier Baselines | **exakt** |
+| Datenaudit, Untergrenzen, Merkmale, Labels, Lernkurve, Kontrolle, alle vier Baselines | **exakt** |
 | `feature_mlp`, `monotone_mlp` | innerhalb 1e-4 (gemessen ~4e-7) |
 | `cnn`, `cnn_unmasked_background` | innerhalb 1e-2 (gemessen ~1,5e-3) |
 
-Alles, was in numpy und scikit-learn gerechnet wird, ist überall exakt. Alles, was in
-TensorFlow trainiert wird, verschiebt sich zwischen CPU-Modellen in den hinteren Stellen,
-weil die Kernel anhand der SIMD-Fähigkeiten ausgewählt werden — bei Matrixmultiplikationen
-schwach, bei Faltungen deutlich stärker. Daher zwei Stufen statt einer, damit jeder Teil so
-eng geprüft wird, wie er es wirklich zulässt.
+Alles in numpy/scikit-learn ist überall exakt; alles in TensorFlow Trainierte verschiebt
+sich in den hinteren Stellen, weil Kernel anhand der SIMD-Fähigkeiten gewählt werden.
+`scripts/compare_results.py` prüft jeden Teil so eng, wie er es zulässt; eine
+5-%-Abweichung bricht den Build weiterhin ab.
 
-**Die Behauptung wurde dabei zweimal enger gefasst.** Zuerst „byteidentisch überall" — das
-galt nur für Host gegen Container auf derselben Maschine. Dann „nur das CNN weicht ab" —
-das galt für ein Paar von Maschinen, aber GitHub-Runner laufen auf unterschiedlichen
-CPU-Modellen, und dort weichen auch die dichten Netze in der sechsten Stelle ab. Erst die
-jetzige Formulierung hält der Messung stand.
+**Die Behauptung wurde zweimal enger gefasst.** Zuerst „byteidentisch überall" — galt nur
+für Host gegen Container auf derselben Maschine. Dann „nur das CNN weicht ab" — galt für
+ein Maschinenpaar, doch GitHub-Runner laufen auf unterschiedlichen CPU-Modellen, wo auch
+die dichten Netze in der sechsten Stelle abweichen. Erst die jetzige Fassung hält der
+Messung stand.
 
-Eine ursprünglich formulierte Behauptung „byteidentisch" galt nur für Host gegen Container
-auf **derselben** Maschine und war maschinenübergreifend zu stark. Statt die gesamte
-Prüfung auf eine Toleranz aufzuweichen, prüft `scripts/compare_results.py` jeden
-Bestandteil mit der Genauigkeit, die er wirklich garantiert. Eine Regression in einem exakt
-reproduzierbaren Teil bricht den Build weiterhin ab.
-
-Damit diese Prüfung überhaupt aussagekräftig ist, sind die Ausgaben getrennt:
-`results.json` enthält ausschließlich Metriken, `run_meta.json` die veränderliche Herkunft
-(Versionen, Plattform, Git-SHA). Lägen beide in einer Datei, würde die Prüfung bei jedem
-Lauf fehlschlagen und wäre wertlos.
-
-**Austauschbare Daten.** Der Mount-Pfad in `compose.yaml` ist kommentiert und zeigt
-standardmäßig auf die mitgelieferten Daten. Nichts, was aus den Daten folgt, ist fest
-verdrahtet: Fehleruntergrenzen, Gruppenanzahl und Faltungsanzahl werden zur Laufzeit
-berechnet. `make validate` prüft den Datenvertrag und meldet Verstöße mit klarer Ursache,
-statt still falsche Ergebnisse zu liefern.
+**Austauschbare Daten:** Mount-Pfad in `compose.yaml` kommentiert; `make validate` prüft
+den Datenvertrag und meldet Verstöße mit klarer Ursache. Nichts aus den Daten Abgeleitetes
+ist fest verdrahtet.
 
 ---
 
 ## 3. Netzarchitektur (15 %)
 
-**Architektur A — Convolutional Neural Network** auf kalibrierten Temperaturkarten
-(64 × 64, ein Kanal, °C/1200).
+**Architektur A — CNN** auf kalibrierten Temperaturkarten (64 × 64, ein Kanal, °C/1200):
 
 ```
-3 × [Conv2D(16/32/64, 3×3) · BatchNorm · ReLU · MaxPool] → GlobalAveragePooling
-   → Dense(32, relu) → Dense(1, linear)
+3 × [Conv2D(16/32/64) · BatchNorm · ReLU · MaxPool] → GlobalAveragePooling
+   → Dense(32, relu) → Dense(1, linear)                     25 745 Parameter
 ```
 
-25 745 Parameter. Als Eingabe dient bewusst die **kalibrierte Temperaturkarte** und nicht
-das RGB-Bild: so verarbeiten CNN und Merkmalsmodelle dieselbe physikalische Größe, und ein
-Unterschied im Ergebnis spiegelt die Architektur wider, nicht die Repräsentation.
+Eingabe ist bewusst die **kalibrierte Temperaturkarte**, nicht das RGB-Bild: so verarbeiten
+CNN und Merkmalsmodelle dieselbe physikalische Größe.
 
 **Ergebnis: MAE 41,07 h, Skill −0,234** — schlechter als der Mittelwert. Das war
-vorhergesagt und ist ein Befund, kein Versäumnis: die Geometrie ist über alle Bilder
-identisch, es gibt kein räumliches Muster, das eine Faltung ausnutzen könnte, und
-Global-Average-Pooling verwirft die Position ohnehin. Bei 25 745 Parametern auf 11
-Beispielen — 2340 Parameter pro Beispiel — bleibt nur Auswendiglernen.
+vorhergesagt und ist ein Befund: Die Geometrie ist über alle Bilder identisch, es gibt kein
+räumliches Muster, das eine Faltung ausnutzen könnte, und Global-Average-Pooling verwirft
+die Position ohnehin. Bei 25 745 Parametern auf 11 Beispielen bleibt nur Auswendiglernen.
+Die Occlusion-Analyse (§6.6) bestätigt den Mechanismus direkt.
 
-Zwei Defekte traten beim Messen zutage und wurden behoben:
+**Drei Defekte traten beim Messen zutage und wurden behoben:**
 
-1. **Divergenz durch Standardisierung.** Die Standardisierung erfolgte pro Merkmalsspalte,
-   bei einem Bild also **pro Pixel** über neun Trainingsbeispiele. Hintergrundpixel haben
-   eine Streuung von ~1e-8; die Division dadurch erzeugte astronomische Eingaben, das Netz
-   divergierte auf MAE 2·10¹³. Temperaturkarten liegen bereits in [0, 1] vor und werden
-   nun unverändert durchgereicht.
+1. **Divergenz durch Standardisierung.** Standardisiert wurde pro Merkmalsspalte, bei einem
+   Bild also **pro Pixel** über neun Beispiele. Hintergrundpixel haben eine Streuung von
+   ~1e-8; die Division erzeugte astronomische Eingaben, das Netz divergierte auf MAE 2·10¹³.
+   Temperaturkarten liegen bereits in [0, 1] vor und werden nun unverändert durchgereicht.
 2. **Augmentation ersetzte statt zu erweitern.** Die Funktion gab dieselbe Anzahl
-   transformierter Bilder zurück, das Netz sah also **kein einziges unverändertes
-   Beispiel** — das war Verfälschung, keine Augmentation. Es trainiert jetzt auf den
-   Originalen plus augmentierten Runden.
+   transformierter Bilder zurück — das Netz sah **kein einziges unverändertes Beispiel**.
+3. **Der Hintergrund war ein Eingabefehler.** Weiß liegt am *heißen* Ende der Skala, ein
+   unmaskierter Hintergrund liest sich also als rund 1000 °C — heißer als große Teile des
+   Triebwerks. Der Merkmalspfad maskierte, der CNN-Pfad nicht.
 
-**Der Hintergrund war ein Eingabefehler.** Weiß liegt in der Farbskala am *heißen* Ende,
-ein unmaskierter Hintergrund liest sich also als rund 1000 °C — heißer als große Teile des
-Triebwerks. Der Merkmalspfad maskiert auf Triebwerkspixel, der CNN-Pfad tat das zunächst
-nicht. Beide Varianten werden gemessen:
+| CNN-Eingabe | MAE [h] |
+|---|---:|
+| Hintergrund maskiert | **41,07** |
+| unmaskiert | 47,01 |
 
-| CNN-Eingabe | MAE [h] | Skill |
-|---|---:|---:|
-| Hintergrund maskiert | **41,07** | −0,234 |
-| unmaskiert | 47,01 | −0,413 |
+Beide Werte stehen in `results.json`, damit die Kosten des Artefakts belegt sind.
 
-Das Maskieren verbessert das Ergebnis um 12,6 %. Beide Werte stehen in `results.json`,
-damit die Kosten des Artefakts belegt und nicht bloß behauptet sind.
+**Nachtrag: Augmentation hilft dem CNN nicht.** Die Kampagne (§7) durchsucht
+`augment_rounds` 0…4 und widerspricht der Einzelbeobachtung:
 
-**Nachtrag aus der Kampagne: Augmentation hilft dem CNN hier gar nicht.** Bei der
-festgelegten Konfiguration verbesserte sie das Ergebnis, doch die systematische Suche
-(§7) durchsucht `augment_rounds` von 0 bis 4 und widerspricht dieser Einzelbeobachtung
-deutlich:
+| Runden | 0 | 1 | 2 | 3 | 4 |
+|---|---:|---:|---:|---:|---:|
+| bester MAE [h] | **24,87** | 28,09 | 28,76 | 33,63 | 55,15 |
 
-| augmentierte Runden | bester MAE [h] | Versuche |
-|---:|---:|---:|
-| **0** | **24,87** | 5 |
-| 1 | 28,09 | 3 |
-| 2 | 28,76 | 3 |
-| 3 | 33,63 | 2 |
-| 4 | 55,15 | 1 |
-
-Der beste CNN-Lauf verwendet **keine** Augmentation, und der Fehler wächst monoton mit
-jeder zusätzlichen Runde. Bei neun Trainingsbildern verschiebt geometrische Augmentation
-offenbar mehr Signal, als sie an Robustheit gewinnt. Die Einzelmessung an einer festen
-Konfiguration war also nicht verallgemeinerbar — ein Beispiel dafür, warum die Kampagne
-existiert.
+Der beste Lauf verwendet **keine** Augmentation, der Fehler wächst monoton. Bei neun
+Trainingsbildern verschiebt geometrische Augmentation mehr Signal, als sie an Robustheit
+gewinnt — ein Beispiel dafür, warum die Kampagne existiert.
 
 ---
 
 ## 4. Alternative Architektur (15 %)
 
-Der Hinweis in der Aufgabenstellung, das zweite Netz müsse kein CNN sein, wurde
-aufgegriffen: **Architektur B ist ein dichtes Netz auf numerischen Vektoren.**
+Der Hinweis der Aufgabenstellung, das zweite Netz müsse kein CNN sein, wurde aufgegriffen:
+**ein dichtes Netz auf numerischen Vektoren.**
 
 ```
-Dense(16, relu) → Dense(8, relu) → Dense(1, linear)      209 Parameter
+Dense(16, relu) → Dense(8, relu) → Dense(1, linear)          177 Parameter
 ```
 
-**Ergebnis: MAE 9,20 h, Skill 0,724** — das beste Modell der Arbeit.
+**Ergebnis: MAE 10,77 ± 1,23 h** — das beste Modell der Arbeit.
 
-Ein Ergebnis war dabei überraschend und widerlegte die eigene Erwartung. Naheliegend wäre,
-dem Netz alle drei Regionstemperaturen zu geben, da sie strikt mehr Information enthalten
-als ihre Summe. Die Kampagne (§7) durchsucht beide Repräsentationen und misst das Gegenteil:
+Eine Erwartung wurde dabei widerlegt. Naheliegend wäre, dem Netz alle drei
+Regionstemperaturen zu geben, da sie strikt mehr Information enthalten als ihre Summe. Die
+Kampagne misst das Gegenteil:
 
-| Eingabe | bester MAE [h] | Median | Versuche |
+| Eingabe | bester MAE | Median | Versuche |
 |---|---:|---:|---:|
 | nur Σ °C | **8,05** | **12,71** | 16 |
 | drei Regionstemperaturen | 14,55 | 22,10 | 12 |
 
 **Alle zehn führenden Konfigurationen verwenden die Summe.** Bei elf Beispielen ist sie
 eine physikalisch motivierte Dimensionsreduktion, die stärker regularisiert als alles, was
-der Optimierer aus drei getrennten Eingaben lernen könnte. Merkmalsentwurf schlägt hier
-Modellkapazität — genau die Idee, die die Aufgabenstellung mit den „nummerischen Vektoren"
-andeutet.
+der Optimierer aus drei Eingaben lernen könnte. Merkmalsentwurf schlägt Modellkapazität.
 
-**Monotone Variante.** Zusätzlich wurde ein Netz mit nichtnegativen Gewichten auf einer
-negierten Eingabe umgesetzt. Es ist strukturell garantiert monoton fallend in der
-Temperatur: ein heißeres Triebwerk kann nie mehr Restlebensdauer erhalten, auch bei
-Extrapolation. Nachgewiesen an 30 zufälligen Paaren nach dem Training (Test `test_monotone_property_holds_across_many_random_pairs`); das unbeschränkte
+**Monotone Variante.** Nichtnegative Gewichte auf negierter Eingabe machen das Netz
+strukturell monoton fallend in der Temperatur: ein heißeres Triebwerk kann nie mehr
+Restlebensdauer erhalten, auch bei Extrapolation. Nachgewiesen an 30 zufälligen Paaren nach
+dem Training (`test_monotone_property_holds_across_many_random_pairs`); das unbeschränkte
 Netz verletzt die Eigenschaft auf denselben Paaren.
 
-Die Garantie kostet Genauigkeit (20,65 h gegenüber 9,20 h), halbiert aber die Streuung über
-Seeds — auf drei Merkmalen 0,24 statt 5,13. Für einen sicherheitsrelevanten Einsatz ist
-das ein vertretbarer Tausch, für die reine Punktgenauigkeit nicht.
+Die Garantie kostet Genauigkeit (20,38 gegen 10,77 h), senkt aber die Seed-Streuung von
+± 1,23 auf **± 0,34 h**. Für sicherheitsrelevanten Einsatz ein vertretbarer Tausch.
 
 ---
 
@@ -313,48 +250,41 @@ das ein vertretbarer Tausch, für die reine Punktgenauigkeit nicht.
 
 | Einstellung | Wert | Begründung |
 |---|---|---|
-| Verlustfunktion | `mse` | wie in der Aufgabenstellung für Regression vorgegeben |
-| Ausgabeschicht | `Dense(1, activation="linear")` | ebenso vorgegeben |
+| Loss | `mse` | wie in der Aufgabenstellung vorgegeben |
+| Ausgabe | `Dense(1, activation="linear")` | ebenso vorgegeben |
 | Optimierer | Adam, lr 1e-3 | Standard, nicht auf Testdaten abgestimmt |
-| Zielskalierung | RUL / 100 | hält den Verlust in einem stabilen Bereich |
+| Zielskalierung | RUL / 100 | hält den Loss stabil |
 | Batchgröße | voller Datensatz | bei 9–10 Trainingsbeispielen ist alles andere künstlich |
-| Kreuzvalidierung | Leave-One-Group-Out über 6 Hash-Gruppen | siehe §1.1 |
-| Seeds | 5 Seeds, Mittelwert ± Streuung (`train.cross_validate_seeds`) | Einzelläufe sind bei n = 11 reines Rauschen |
+| Kreuzvalidierung | Leave-One-Group-Out über 6 Hash-Gruppen | §1.1 |
+| Seeds | 5, Mittelwert ± Streuung (`train.cross_validate_seeds`) | §5.1 |
 | Early Stopping | **keines** | siehe unten |
 
-**Kein Early Stopping — und warum das die ehrlichere Wahl ist.** Bei Leave-One-Group-Out
-enthält jede Faltung genau eine ausgelassene Gruppe. Ein Abbruchkriterium darauf zu stützen
-hieße, die Testdaten in die Trainingsentscheidung einzubeziehen. Das Epochenbudget wurde
-deshalb vorab festgelegt und nicht anhand der ausgelassenen Faltung angepasst.
+**Kein Early Stopping.** Bei Leave-One-Group-Out enthält jede Faltung genau eine
+ausgelassene Gruppe; ein Abbruchkriterium darauf zu stützen hieße, die Testdaten in die
+Trainingsentscheidung einzubeziehen. Das Epochenbudget wurde vorab festgelegt.
 
-### 5.1 Seed-Stabilität — warum ein Einzellauf nicht berichtbar ist
+**Standardisierung und Zielskalierung werden innerhalb der Faltung geschätzt** — über den
+gesamten Datensatz berechnete Statistiken trügen bei elf Beispielen einen sichtbaren
+Abdruck der ausgelassenen Gruppe.
 
-Über die fünf konfigurierten Seeds:
+**Augmentation — und was hier verboten ist.** Farbe *ist* das Label. Helligkeits-,
+Kontrast-, Farbton- und Gamma-Variation würden das Beispiel nicht augmentieren, sondern
+**stillschweigend umetikettieren**. Zulässig sind nur geometrische Transformationen und
+Messfehler (Sensorrauschen, Kalibrierungsversatz). Horizontales Spiegeln ist
+ausgeschlossen, da es Konus und Pylon vertauscht.
+
+### 5.1 Seed-Stabilität
 
 | Modell | MAE [h] | Streuung |
 |---|---:|---:|
 | feature_mlp | 10,77 | ± 1,23 |
 | monotone_mlp | 20,38 | ± 0,34 |
 
-Zehn Seeds gemessen: Mittelwert 11,01, Streuung 1,96, Spanne 7,99 bis 14,80. Der Abstand
-zwischen bestem und schlechtestem Lauf beträgt fast 7 Stunden — bei einem Modell, dessen
-Vorsprung gegenüber der besten Baseline knapp 1 Stunde ausmacht. Deshalb wird der
-Mittelwert mit Streuung berichtet und nicht der beste Lauf.
-
-Bemerkenswert: das monotone Netz streut mit ± 0,34 h fast viermal weniger. Die strukturelle
-Beschränkung wirkt als starker Regularisierer — sie kostet Genauigkeit und kauft dafür
-Verlässlichkeit.
-
-**Standardisierung und Zielskalierung werden innerhalb der Faltung geschätzt.** Über den
-gesamten Datensatz berechnete Statistiken trügen bei elf Beispielen einen sichtbaren
-Abdruck der ausgelassenen Gruppe.
-
-**Augmentation — und was hier verboten ist.** Farbe *ist* das Label. Helligkeits-,
-Kontrast-, Farbton- und Gamma-Variation würden das Beispiel nicht augmentieren, sondern
-**stillschweigend umetikettieren**. Zulässig sind ausschließlich geometrische
-Transformationen (Verschiebung, Skalierung, kleine Rotation) und Messfehler (additives
-Sensorrauschen, kleiner Kalibrierungsversatz). Horizontales Spiegeln ist ausgeschlossen, da
-es Konus und Pylon vertauscht.
+Über zehn Seeds gemessen: Mittelwert 11,01, Streuung 1,96, Spanne **7,99 bis 14,80 h**.
+Zwischen bestem und schlechtestem Lauf liegen fast 7 Stunden — bei einem Modell, dessen
+Vorsprung gegenüber der besten Baseline knapp 1 Stunde beträgt. Deshalb wird der Mittelwert
+mit Streuung berichtet und nicht der beste Lauf: Seed 0 allein ergäbe 9,20 h und läge auf
+Rang 2 von 10.
 
 ---
 
@@ -362,18 +292,16 @@ es Konus und Pylon vertauscht.
 
 ### 6.1 Baseline-Leiter
 
-Jede Stufe beantwortet einen konkreten Einwand gegen das neuronale Ergebnis.
-
 | Stufe | Frage | MAE [h] |
 |---|---|---:|
 | Mittelwert | Wie sieht „kein Können" aus? | 33,28 |
 | Nearest Neighbour | Ist es bloßes Nachschlagen? | 22,82 |
 | Lineare Regression | Genügt ein Parameter? | 11,92 |
 | Isotone Regression | Schließt die monotone Physik die Lücke? | 11,68 |
-| **feature_mlp** | **Schlägt ein gelerntes Modell die geschlossene Form?** | **9,20** |
+| **feature_mlp** | **Schlägt ein gelerntes Modell die geschlossene Form?** | **10,77 ± 1,23** |
 
 Bemerkenswert ist der Abstand zwischen linearer und isotoner Regression auf demselben
-einzelnen Merkmal: der Zusammenhang ist monoton, aber deutlich nichtlinear.
+Merkmal: der Zusammenhang ist monoton, aber deutlich nichtlinear.
 
 ![Baseline-Leiter](reports/figures/ladder.png)
 
@@ -381,49 +309,29 @@ einzelnen Merkmal: der Zusammenhang ist monoton, aber deutlich nichtlinear.
 
 ![Vorhersage gegen Wahrheit](reports/figures/predicted_vs_actual.png)
 
-Das schmale rote Band ist die erreichbare Genauigkeit (±1,36 h). Es ist gegen die
-tatsächlichen Fehler kaum sichtbar — genau das ist die Aussage.
+Das schmale rote Band ist die erreichbare Genauigkeit (± 1,36 h) — gegen die tatsächlichen
+Fehler kaum sichtbar. Genau das ist die Aussage.
 
-**Woher der verbleibende Fehler stammt — und warum das neuronale Netz gewinnt.** Die
-Untergrenze begrenzt, was angesichts der *Labels* möglich ist. Eine zweite Grenze folgt
-daraus, dass nur **sechs verschiedene Zustände** existieren: jede Faltung trainiert auf
-fünf und muss den sechsten vorhersagen. Für innere Zustände ist das Interpolation, für die
-Randzustände Extrapolation über alles Gesehene hinaus.
+**Woher der Fehler stammt — und warum das Netz gewinnt.** Bei sechs Zuständen trainiert
+jede Faltung auf fünf und sagt den sechsten vorher: innen Interpolation, an den Rändern
+Extrapolation.
 
-Aufgeschlüsselt nach Randgruppen (3/5 h und 100 h) gegen innere Gruppen:
+| Modell | Rand-MAE [h] | Innen-MAE [h] | ausgelassen 3 h | ausgelassen 100 h |
+|---|---:|---:|---:|---:|
+| **feature_mlp** | **5,65** | 10,53 | **11,14** | **97,33** |
+| isotonic | 20,67 | **8,31** | 25,00 | 80,00 |
 
-| Modell | Rand-MAE [h] | Innen-MAE [h] |
-|---|---:|---:|
-| **feature_mlp** | **5,65** | 10,53 |
-| isotonic | 20,67 | **8,31** |
-| linear | 14,23 | 11,06 |
-
-Das Ergebnis ist zunächst überraschend: **innen ist die isotone Regression besser** (8,31
-gegen 10,53). Der gesamte Vorsprung des neuronalen Netzes entsteht am Rand — und der Grund
-ist strukturell:
-
-| ausgelassene Gruppe | isotonic sagt | feature_mlp sagt | wahr |
-|---|---:|---:|---:|
-| 3 h | 25,00 | **11,14** | 3 |
-| 100 h | 80,00 | **97,33** | 100 |
-
-Die isotone Regression **kappt** auf den Wertebereich ihrer Trainingsdaten
-(`out_of_bounds="clip"`); sie kann per Konstruktion nichts außerhalb des Gesehenen
-vorhersagen. Das dichte Netz extrapoliert dagegen und trifft beide Randfälle deutlich
-besser.
-
-Damit ist der Kernbefund der Arbeit präzise erklärbar: Die 9,20 h gegenüber 11,68 h
-stammen **nicht** aus einer allgemein besseren Anpassung, sondern ausschließlich daraus,
-dass das Netz an den beiden Rändern nicht zusammenbricht. Für einen Datensatz mit sechs
-Zuständen, bei dem jede Faltung einen Randzustand vorhersagen muss, ist genau das die
-entscheidende Eigenschaft.
+**Innen ist die isotone Regression besser.** Der gesamte Vorsprung des Netzes entsteht am
+Rand, und der Grund ist strukturell: die isotone Regression **kappt** auf ihren
+Trainingsbereich (`out_of_bounds="clip"`) und kann nichts außerhalb des Gesehenen
+vorhersagen; das Netz extrapoliert. Bei einem Datensatz, in dem jede Faltung einen
+Randzustand vorhersagen muss, entscheidet genau diese Eigenschaft.
 
 ### 6.3 Kontrollexperiment mit permutierten Labels
 
-Werden die Labels zufällig vertauscht, erreicht das Modell **34,46 h** gegenüber einem
-Nullniveau von **33,28 h** — also minimal *schlechter* als Raten. Es bleibt kein Restsignal
-zum Auswendiglernen übrig. Das Ergebnis von 9,20 h ist damit gemessenes Können und keine
-Memorierung.
+Mit zufällig vertauschten Labels erreicht das Modell **34,46 h** gegenüber einem Nullniveau
+von **33,28 h** — minimal *schlechter* als Raten. Es bleibt kein Restsignal zum
+Auswendiglernen; das Ergebnis ist gemessenes Können und keine Memorierung.
 
 ### 6.4 Lernkurve
 
@@ -433,130 +341,111 @@ Memorierung.
 |---|---:|---:|---:|---:|
 | MAE [h] | 55,0 | 27,0 | 17,9 | 10,2 |
 
-Steil fallend, ohne Anzeichen einer Sättigung. Jeder zusätzliche thermische Zustand
-halbiert den Fehler etwa. Der verbleibende Fehler ist damit vor allem ein Datenproblem und
-kein Modellproblem — die wichtigste Aussage für die Frage, wie es weitergehen sollte.
+Steil fallend, ohne Sättigung: jeder zusätzliche thermische Zustand halbiert den Fehler
+etwa. Der verbleibende Fehler ist vor allem ein Daten-, kein Modellproblem.
 
 ### 6.5 Klassifikationssicht
 
 ![Konfusionsmatrix](reports/figures/confusion.png)
 
-Dieselben Vorhersagen, in 10-Stunden-Klassen eingeteilt. Die Matrix ist dünn besetzt, weil
-elf Beispiele auf zehn Klassen entfallen — was gleichzeitig zeigt, warum ein direkt
-trainierter Klassifikator hier die schlechtere Wahl gewesen wäre.
+Dieselben Vorhersagen in 10-Stunden-Klassen. Die Matrix ist dünn besetzt, weil elf
+Beispiele auf zehn Klassen entfallen — was zugleich zeigt, warum ein direkt trainierter
+Klassifikator die schlechtere Wahl gewesen wäre.
 
-### 6.6 Attribution — worauf schauen die Modelle?
+### 6.6 Attribution
 
-**Permutationswichtigkeit** auf dem monotonen Netz (dem Modell, das die drei
-Regionstemperaturen getrennt verarbeitet): Anstieg des MAE, wenn ein Merkmal vertauscht
-wird.
+**Permutationswichtigkeit** auf dem monotonen Netz (dem Modell mit drei getrennten
+Eingaben): Anstieg des MAE bei Vertauschung eines Merkmals.
 
-| Merkmal | Wichtigkeit [h] |
-|---|---:|
-| Konus | **13,20** |
-| Pylon | 9,24 |
-| Körper | −0,11 |
+| Merkmal | Konus | Pylon | Körper |
+|---|---:|---:|---:|
+| Wichtigkeit [h] | **13,20** | 9,24 | −0,11 |
 
-Der Konus trägt am meisten, der Körper praktisch nichts. Das passt zur Temperaturleiter
-aus §1.4: der Körper nimmt über die sechs Zustände nur drei Werte an, während Konus und
-Pylon die Ränder des Bereichs auflösen.
+Der Konus trägt am meisten, der Körper praktisch nichts — passend zur Leiter aus §1.4, wo
+der Körper über die sechs Zustände nur drei Werte annimmt.
 
-**Occlusion** auf dem CNN, angewandt auf das heißeste Beispiel (3 h):
+**Occlusion** auf dem CNN, heißestes Beispiel (3 h):
 
 ![Occlusion](reports/figures/occlusion.png)
 
-Die Empfindlichkeit ist über das gesamte Bild **diffus verteilt** — auch über reinen
-Hintergrund. Das CNN richtet seine Aufmerksamkeit also nicht auf das Triebwerk. Damit ist
-sein Versagen nicht nur am Ergebnis ablesbar, sondern auch am Mechanismus: Es hat keine
-räumliche Struktur gefunden, weil es in diesem Datensatz keine zu finden gibt.
+Die Empfindlichkeit ist über das gesamte Bild **diffus verteilt**, auch über reinen
+Hintergrund. Das CNN richtet seine Aufmerksamkeit nicht auf das Triebwerk. Sein Versagen
+ist damit nicht nur am Ergebnis ablesbar, sondern am Mechanismus.
 
 ### 6.7 Prognoseintervalle
 
-Statt eines Punktwerts liefert das System ein Intervall aus dem Jackknife+-Quantil der
-Out-of-Fold-Residuen: bei 90 % Zielabdeckung eine Halbbreite von **21,95 h**. Das ist
-breit, aber ehrlich — und mit der Endlichkeitskorrektur `(n+1)/n` bei sechs Residuen
-tatsächlich gültig statt nur asymptotisch.
+Statt eines Punktwerts ein Intervall aus dem Jackknife+-Quantil der Out-of-Fold-Residuen:
+bei 90 % Zielabdeckung eine Halbbreite von **21,95 h**. Breit, aber ehrlich — und mit der
+Endlichkeitskorrektur `(n+1)/n` bei sechs Residuen tatsächlich gültig statt asymptotisch.
 
-### 6.8 Grenzen des Modells
+### 6.8 Grenzen
 
-- Es kennt **sechs** thermische Zustände; zwischen ihnen wird interpoliert, darüber hinaus
-  extrapoliert. Die interaktive Demo kennzeichnet Eingaben außerhalb des beobachteten
-  Bereichs ausdrücklich.
-- Die Vorhersage hängt vollständig davon ab, dass die Farbkalibrierung gültig bleibt.
-- Das beste Modell liest die **Summe** der Temperaturen. Die Aufschlüsselung nach Regionen
+- Sechs bekannte Zustände; dazwischen Interpolation, darüber hinaus Extrapolation. Die
+  Demo kennzeichnet Eingaben außerhalb des beobachteten Bereichs ausdrücklich.
+- Vollständige Abhängigkeit von einer gültigen Farbkalibrierung.
+- Das beste Modell liest die **Summe** der Temperaturen; die Aufschlüsselung nach Regionen
   ist diagnostisch wertvoll, geht aber nicht in die Schätzung ein.
-- Jenseits von 100 h liegen keine Daten vor; Aussagen dort sind unbegründet.
+- Jenseits von 100 h liegen keine Daten vor.
 
 ---
 
 ## 7. Optimierungskampagne
 
-Die Kampagne (`docker compose --profile search run --rm search`) durchsucht die
-Architekturfamilien mit Optuna und protokolliert **jeden** Versuch nach
-`reports/experiments.csv` — auch die gescheiterten und die schlechten. Ein Protokoll, das
-nur Erfolge enthält, kann eine gründliche Suche nicht von einer glücklichen unterscheiden.
+`docker compose --profile search run --rm search` durchsucht die Architekturfamilien mit
+Optuna und protokolliert **jeden** Versuch nach `reports/experiments.csv` — auch
+gescheiterte. Ein Protokoll nur mit Erfolgen kann eine gründliche Suche nicht von einer
+glücklichen unterscheiden. Durchsuchte Achsen: Eingaberepräsentation, Tiefe, Breite,
+Lernrate, L2, Epochenbudget, Loss (`mse`/`huber`), beim CNN zusätzlich Filterzahl, Dropout,
+Augmentationsstärke.
 
-Durchsuchte Achsen: Eingaberepräsentation (Summe gegen drei Regionen), Tiefe und Breite,
-Lernrate, L2-Regularisierung, Epochenbudget, Verlustfunktion (`mse` gegen `huber`), für das
-CNN zusätzlich Filterzahl, Dropout und Augmentationsstärke.
+**42 Versuche, 42 erfolgreich:**
 
-### 7.1 Ergebnisse — 42 Versuche, 42 erfolgreich
-
-| Familie | bester MAE [h] | Median | Versuche |
+| Familie | bester MAE | Median | Versuche |
 |---|---:|---:|---:|
 | feature_mlp | **8,05** | 12,19 | 14 |
 | monotone_mlp | 12,56 | 15,89 | 14 |
 | cnn | 24,87 | 30,33 | 14 |
 
-| Eingaberepräsentation | bester MAE | Median | Versuche |
-|---|---:|---:|---:|
-| Σ °C (Summe) | **8,05** | **12,71** | 16 |
-| drei Regionstemperaturen | 14,55 | 22,10 | 12 |
+Auch das CNN bekam eine faire Chance: 14 eigene Versuche erreichten 24,87 h. Sein schwaches
+Abschneiden liegt also nicht an schlecht gewählten Hyperparametern — es bleibt deutlich
+hinter einer ungetunten linearen Regression zurück.
 
-**Alle zehn führenden Konfigurationen verwenden die Summe.** Die drei getrennten
-Temperaturen enthalten strikt mehr Information und schneiden strikt schlechter ab — die in
-§4 aus drei Seeds gewonnene Beobachtung ist damit durch eine systematische Suche bestätigt.
-
-Auch das CNN bekam eine faire Chance: 14 eigene Versuche verbesserten es von 41,8 auf
-24,9 h. Sein schwaches Abschneiden liegt also nicht an schlecht gewählten
-Hyperparametern — es bleibt deutlich hinter einer ungetunten linearen Regression zurück.
-
-### 7.2 Ehrlich gegen getunt
+**Ehrlich gegen getunt:**
 
 | | MAE [h] | |
 |---|---:|---|
-| Berichtetes Ergebnis | **9,20** | Konfiguration **vor** der Suche festgelegt |
+| Berichtetes Ergebnis | **10,77 ± 1,23** | Konfiguration **vor** der Suche festgelegt |
 | Bester Kampagnenwert | 8,05 | Konfiguration **durch** den berichteten Wert ausgewählt |
 
-Als Ergebnis wird bewusst 9,20 h berichtet und nicht 8,05 h. Der Kampagnenbestwert wurde
-mit derselben Kreuzvalidierung ausgewählt, mit der er bewertet wird; ihn als Ergebnis
-auszugeben wäre ein Selektionsfehler, der bei sechs effektiven Beispielen nicht klein ist.
-Die Differenz von 1,15 h ist selbst ein Messwert dafür, wie stark Tuning ein Modell bei
-dieser Stichprobengröße schmeichelt.
+Berichtet wird bewusst 10,77 h. Der Kampagnenbestwert wurde mit derselben Kreuzvalidierung
+ausgewählt, mit der er bewertet wird; ihn auszugeben wäre ein Selektionsfehler, der bei
+sechs effektiven Beispielen nicht klein ist.
+
+Eine verschachtelte Kreuzvalidierung wäre nötig, wenn die Modellauswahl *innerhalb* der
+Bewertungsschleife stattfände. Die berichtete Konfiguration steht vor jeder Suche fest,
+womit gruppiertes LOGO bereits erwartungstreu für sie ist; der Selektionsfehler wird
+stattdessen offen als getunter Wert ausgewiesen statt in einer Verschachtelung versteckt.
 
 ---
 
 ## 8. Fazit
 
-Die Aufgabe ließ sich nicht dadurch lösen, ein möglichst großes Netz auf die Bilder zu
-werfen. Entscheidend war, den Datensatz zuerst zu verstehen: 11 Dateien sind 6 Bilder, die
-Farbskala ist nicht helligkeitsmonoton, und die Flächenmerkmale verraten die Temperatur
-über ein Encoder-Artefakt.
+Die Aufgabe ließ sich nicht durch ein möglichst großes Netz lösen. Entscheidend war, den
+Datensatz zuerst zu verstehen: 11 Dateien sind 6 Bilder, die Farbskala ist nicht
+helligkeitsmonoton, und die Flächenmerkmale verraten die Temperatur über ein
+Encoder-Artefakt.
 
-Aus dieser Analyse folgte alles Weitere — Gruppierung nach Bildinhalt, eine beweisbare
-Fehleruntergrenze als Bezugsgröße, das Verbot photometrischer Augmentation und die
-Erkenntnis, dass ein Netz mit 177 Parametern auf einem einzigen physikalisch motivierten
-Merkmal ein CNN mit 25 745 Parametern deutlich schlägt.
+Daraus folgte alles Weitere — Gruppierung nach Bildinhalt, eine beweisbare Untergrenze als
+Bezugsgröße, das Verbot photometrischer Augmentation, und die Erkenntnis, dass ein Netz mit
+177 Parametern auf einem physikalisch motivierten Merkmal ein CNN mit 25 745 Parametern
+deutlich schlägt.
 
-Der Vorsprung des besten Modells ist dabei präzise lokalisierbar: Im Inneren des
-Wertebereichs ist die isotone Regression sogar besser (8,31 gegen 10,53 h). Gewonnen wird
-ausschließlich an den beiden Rändern, weil das Netz extrapoliert, während die isotone
-Regression konstruktionsbedingt kappt. Bei sechs Zuständen, von denen jede Faltung einen
-Randzustand vorhersagen muss, entscheidet genau diese Eigenschaft.
+Der Vorsprung ist dabei präzise lokalisierbar: Im Inneren des Wertebereichs ist die isotone
+Regression besser (8,31 gegen 10,53 h); gewonnen wird ausschließlich an den Rändern, weil
+das Netz extrapoliert, während die isotone Regression kappt.
 
-Das Ergebnis von **10,77 ± 1,23 h MAE** liegt weit über der Untergrenze von 1,364 h — und
-der Vorsprung gegenüber der isotonen Regression (11,68 h) liegt innerhalb einer
-Standardabweichung. Die Lernkurve
-zeigt, warum: mit sechs unterscheidbaren Zuständen ist die Aufgabe datenbegrenzt, nicht
-modellbegrenzt. Die ehrlichste Empfehlung an die Glys lautet daher nicht „ein größeres
-Netz", sondern **mehr thermische Zustände messen**.
+Das Ergebnis von **10,77 ± 1,23 h** liegt weit über der Untergrenze von 1,364 h, und der
+Vorsprung gegenüber der isotonen Regression liegt innerhalb einer Standardabweichung. Die
+Lernkurve zeigt, warum: mit sechs unterscheidbaren Zuständen ist die Aufgabe datenbegrenzt,
+nicht modellbegrenzt. Die ehrlichste Empfehlung an die Glys lautet daher nicht „ein
+größeres Netz", sondern **mehr thermische Zustände messen**.

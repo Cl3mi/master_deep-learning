@@ -1,276 +1,166 @@
 # Glys Engine — Remaining Useful Life Estimation
 
-Predicting how many operating hours a spaceship engine has left, from a single
-thermal-camera image.
+Estimating how many operating hours a spaceship engine has left, from one thermal image.
 
-**[→ Interactive demo](https://cl3mi.github.io/master_deep-learning/)** ·
-**[→ Bericht (Deutsch)](BERICHT.md)** · **[→ Design specification](docs/design/2026-08-06-glys-rul-design.md)**
-
----
+**[Interactive demo](https://cl3mi.github.io/master_deep-learning/)** ·
+**[Bericht (Deutsch)](BERICHT.md)** ·
+**[Design spec](docs/design/2026-08-06-glys-rul-design.md)**
 
 ## The finding that shapes everything
 
-The supplied dataset contains **11 files but only 6 unique images**. Five pairs are
-byte-identical yet carry different labels:
+The dataset has **11 files but only 6 unique images** — five byte-identical pairs carrying
+different labels (`003h`=`005h`, `024h`=`026h`, `047h`=`051h`, `073h`=`076h`, `078h`=`082h`).
 
-| Files | Labels | md5 |
-|---|---|---|
-| `003h.jpeg` = `005h.jpeg` | 3 h, 5 h | `87558f…` |
-| `024h.jpeg` = `026h.jpeg` | 24 h, 26 h | `4dac2b…` |
-| `047h.jpeg` = `051h.jpeg` | 47 h, 51 h | `8b2bf8…` |
-| `073h.jpeg` = `076h.jpeg` | 73 h, 76 h | `bc54a4…` |
-| `078h.jpeg` = `082h.jpeg` | 78 h, 82 h | `1b3259…` |
-| `100h.jpeg` | 100 h | `c2ee1e…` |
+| Consequence | Why |
+|---|---|
+| Splits group by **content hash**, never filename | Holding out `005h` leaves its pixel-identical twin `003h` in training — undetectable leakage |
+| Error is **bounded below**: MAE 1.364 h, RMSE 1.492 h | Identical pixels with different labels are indistinguishable to any model; the best possible prediction per pair is one constant |
+| Only **three numbers** matter | Geometry is identical across all images; only cone/body/pylon colour varies |
 
-Three consequences drive every decision in this repository:
-
-1. **Splits must separate content hashes, not filenames.** Hold out `005h.jpeg` and its
-   pixel-identical twin `003h.jpeg` sits in the training set. That is undetectable
-   leakage, and it is why every split here is grouped by md5.
-2. **Error is bounded below.** Identical pixels carrying different labels cannot be told
-   apart by any function of the image, so the best possible prediction for a pair is one
-   constant. That bounds accuracy at **MAE 1.364 h** and **RMSE 1.492 h**. A model
-   reporting less has leaked or memorised.
-3. **Only three numbers matter.** Geometry is identical across the dataset; only the
-   colour of the cone, body and pylon varies.
-
-How much this matters, concretely: nearest-neighbour regression scores **1.36 h**
-in-sample and **22.82 h** under grouped cross-validation. The same model, the same data —
-a factor of seventeen, entirely from being allowed to look up the answer.
+Concretely: nearest-neighbour regression scores **1.36 h in-sample** and **22.82 h** under
+grouped CV. Same model, same data — a factor of 17, purely from being denied the lookup.
 
 ## Quickstart
 
 ```bash
-docker compose up          # full reproduction, ~17 min, writes reports/
+docker compose up                         # full reproduction, ~17 min, writes reports/
+uv sync && uv run glys-rul reproduce      # without Docker
+make help                                 # validate · search · test · verify
 ```
 
-Or without Docker:
-
-```bash
-uv sync && uv run glys-rul reproduce
-```
-
-Other entry points:
-
-```bash
-docker compose --profile validate run --rm validate   # check the data contract only
-docker compose --profile search   run --rm search     # optimisation campaign
-make help                                             # all targets
-```
-
-### Using your own data
-
-Edit the mount path in [`compose.yaml`](compose.yaml). The format contract is:
-
-- a folder of images named `<hours>h.jpeg` — the number is the remaining useful life
-- a colour-scale reference image `temp.png` spanning the temperature range
-- engines that decompose into three connected regions on a light background
-
-`make validate` checks the contract and prints a report before any training happens.
-Nothing derived from the data is hard-coded — error floors, group counts and fold counts
-are all computed at runtime, so a different dataset gets its own honest bounds.
+**Your own data:** edit the mount path in [`compose.yaml`](compose.yaml). Contract: images
+named `<hours>h.jpeg`, a colour-scale reference `temp.png`, engines forming three connected
+regions on a light background. `make validate` checks it before any training. Nothing
+data-derived is hard-coded — floors, group counts and fold counts are computed at runtime.
 
 ## Results
 
-All figures are **grouped leave-one-group-out cross-validation**: six folds, each holding
-out one content group entirely, so no model is ever scored on an image it has seen.
+Grouped leave-one-group-out CV: six folds, each holding out one content group entirely.
 
-| Model | MAE [h] | RMSE [h] | R² | Skill |
-|---|---:|---:|---:|---:|
-| **feature_mlp** (5 seeds) | **10.77 ± 1.23** | — | — | **0.676** |
-| feature_mlp (seed 0 only) | 9.20 | 10.99 | 0.879 | 0.724 |
-| isotonic | 11.68 | 13.07 | 0.829 | 0.649 |
-| linear | 11.92 | 12.65 | 0.840 | 0.642 |
-| monotone_mlp | 20.65 | 24.54 | 0.397 | 0.379 |
-| nearest_neighbour | 22.82 | 23.04 | 0.469 | 0.314 |
-| mean | 33.28 | 37.82 | −0.432 | 0.000 |
-| cnn | 41.07 | 54.10 | −1.933 | −0.234 |
-| cnn_unmasked_background | 47.01 | 54.19 | −1.942 | −0.413 |
+| Model | MAE [h] | Skill | Input |
+|---|---:|---:|---|
+| **feature_mlp** (5 seeds) | **10.77 ± 1.23** | **0.676** | Σ°C |
+| isotonic | 11.68 | 0.649 | Σ°C |
+| linear | 11.92 | 0.642 | Σ°C |
+| monotone_mlp (5 seeds) | 20.38 ± 0.34 | 0.388 | cone/body/pylon |
+| nearest_neighbour | 22.82 | 0.314 | Σ°C |
+| mean | 33.28 | 0.000 | — |
+| cnn | 41.07 | −0.234 | 64×64 temperature map |
+| cnn_unmasked_background | 47.01 | −0.413 | as above, background unmasked |
 
-*Irreducible floor: MAE 1.364 h · RMSE 1.492 h.*
+*Floor: MAE 1.364 h · RMSE 1.492 h.* Neural rows are the mean ± sd over five seeds
+(`results.json → seed_sweep`); the `models` block in that file holds the single seed-0 run
+(feature_mlp 9.20 h, monotone_mlp 20.65 h) used for the figures and out-of-fold predictions.
 
-**Read the seed spread before the headline.** A single run is dominated by initialisation
-noise at eleven samples: across ten seeds the same model ranges from 7.99 to 14.80 h
-(mean 11.01, sd 1.96). The reported figure is therefore the mean ± sd over five seeds, and
-the neural model's ~0.9 h margin over isotonic regression — which is deterministic at
-11.68 h — **sits inside one standard deviation**. It is better in expectation; it is not
-cleanly separable from seed noise at this sample size.
+**Read the spread before the headline.** At eleven samples a single run is initialisation
+noise: over ten seeds this model ranges 7.99–14.80 h (mean 11.01, sd 1.96). Isotonic
+regression is *deterministic* at 11.68 h, so the neural model's ~0.9 h margin **sits inside
+one standard deviation**. Better in expectation, not cleanly separable from seed noise.
 
 ![Baseline ladder](reports/figures/ladder.png)
 ![Predicted versus actual](reports/figures/predicted_vs_actual.png)
 
-Two supporting results:
+### Why 10.8 h and not 1.36 h
 
-**Learning curve** — cross-validated MAE against the number of training groups:
-55.0 → 27.0 → 17.9 → 10.2 h for 2 → 5 groups. Steeply descending with no plateau, which
-says the remaining error is a *data* limitation rather than a modelling one.
+The floor bounds what the *labels* permit. A second bound comes from having only six
+states: each fold trains on five and predicts a sixth — interpolation inside, extrapolation
+at the edges. **That edge behaviour is exactly why the network wins:**
 
-**Seed stability** — feature_mlp 10.77 ± 1.23 h, monotone_mlp 20.38 ± 0.34 h over five
-seeds. The monotone constraint costs accuracy and buys almost a four-fold reduction in
-spread.
+| | endpoint MAE | interior MAE | held-out 3 h | held-out 100 h |
+|---|---:|---:|---:|---:|
+| feature_mlp | **5.65** | 10.53 | **11.14** | **97.33** |
+| isotonic | 20.67 | **8.31** | 25.00 | 80.00 |
 
-**Shuffled-label control** — with labels randomly permuted the model scores 34.46 h
-against a no-skill baseline of 33.28 h, i.e. very slightly *worse* than guessing the
-average. There is no residual signal left to memorise, so the 9.20 h result is genuine.
+Isotonic is *better in the interior*. It clips to its training range and structurally
+cannot predict outside it; the network extrapolates. The whole advantage is at the edges.
+
+### Supporting evidence
+
+| Check | Result |
+|---|---|
+| Learning curve (2→5 groups) | 55.0 → 27.0 → 17.9 → 10.2 h — steep, no plateau: **data-limited, not model-limited** |
+| Shuffled-label control | 34.46 h vs 33.28 h no-skill — no residual signal to memorise, so the result is genuine |
+| Permutation importance | cone 13.20 h · pylon 9.24 h · body −0.11 h |
+| Occlusion (CNN) | sensitivity diffuse across the whole frame including background — it never attends to the engine |
+| Conformal interval | ±21.95 h at 90 % coverage (jackknife+, finite-sample corrected) |
 
 ## Optimisation campaign
 
-`docker compose --profile search run --rm search` searches the architecture families with
-Optuna and logs **every** trial — including failures — to
-[`reports/experiments.csv`](reports/experiments.csv). A ledger of only successes cannot
-distinguish a thorough search from a lucky one.
+42 trials, 42 successful, logged in full — failures included — to
+[`reports/experiments.csv`](reports/experiments.csv).
 
-42 trials, 42 successful:
+| Family | best | median | | Input | best | median |
+|---|---:|---:|---|---|---:|---:|
+| feature_mlp | **8.05** | 12.19 | | Σ°C | **8.05** | **12.71** |
+| monotone_mlp | 12.56 | 15.89 | | three regions | 14.55 | 22.10 |
+| cnn | 24.87 | 30.33 | | | | |
 
-| Family | best MAE [h] | median | trials |
-|---|---:|---:|---:|
-| feature_mlp | **8.05** | 12.19 | 14 |
-| monotone_mlp | 12.56 | 15.89 | 14 |
-| cnn | 24.87 | 30.33 | 14 |
+**All ten leading configurations use the summed feature.** Three separate temperatures
+carry strictly more information and perform strictly worse — at eleven samples the sum is a
+physics-motivated reduction that regularises better than anything the optimiser learns.
 
-| Input representation | best | median | trials |
-|---|---:|---:|---:|
-| Σ°C (summed) | **8.05** | **12.71** | 16 |
-| three region temperatures | 14.55 | 22.10 | 12 |
-
-**All ten leading configurations use the summed temperature.** Three separate region
-temperatures carry strictly more information and perform strictly worse — at eleven
-samples the sum is a physics-motivated reduction that regularises better than anything the
-optimiser can learn. Feature engineering beats model capacity here.
-
-Tuning also gave the CNN a fair hearing: 14 dedicated trials reached 24.9 h, so its poor
-showing is not merely bad hyperparameters. It remains far behind an untuned linear
-regression.
-
-### Honest versus tuned
-
-| | MAE [h] | |
-|---|---:|---|
-| Reported result | **9.20** | configuration fixed *before* the search |
-| Campaign best | 8.05 | configuration *selected by* the score it reports |
-
-The headline figure is 9.20 h, not 8.05 h. The campaign's best was chosen by the same
-cross-validation that scores it, so quoting it would be selection bias — and at six
-effective samples that bias is not small. The 1.15 h gap between the two is itself a
-measurement of how much tuning flatters a model at this sample size.
+The reported figure stays **10.77 h**, not the campaign's 8.05 h: that configuration was
+selected by the same CV that scores it. The gap measures how much tuning flatters a model
+at this sample size.
 
 ## Rubric coverage
 
 | Requirement | Weight | Where |
 |---|---|---|
-| Feature-Extraction | 25 % | [`colorscale.py`](src/glys_rul/colorscale.py) · [`segment.py`](src/glys_rul/segment.py) · [`features.py`](src/glys_rul/features.py) · [`audit.py`](src/glys_rul/audit.py) · [`reports/features.csv`](reports/features.csv) |
-| Reproduzierbare Umgebung | 10 % | [`Dockerfile`](Dockerfile) · [`compose.yaml`](compose.yaml) · [`uv.lock`](uv.lock) · [`ci.yml`](.github/workflows/ci.yml) |
-| Netzarchitektur | 15 % | [`models.py::build_cnn`](src/glys_rul/models.py) |
-| Alternative Architektur | 15 % | [`models.py::build_mlp`](src/glys_rul/models.py), [`build_monotone_mlp`](src/glys_rul/models.py) |
-| Trainingseinstellungen | 15 % | [`train.py`](src/glys_rul/train.py) · [`dataset.py`](src/glys_rul/dataset.py) |
-| Schätzgenauigkeit | 20 % | [`evaluate.py`](src/glys_rul/evaluate.py) · [`reports/figures/`](reports/figures) |
+| Feature-Extraction | 25 % | [`colorscale`](src/glys_rul/colorscale.py) · [`segment`](src/glys_rul/segment.py) · [`features`](src/glys_rul/features.py) · [`audit`](src/glys_rul/audit.py) · BERICHT §1 |
+| Reproduzierbare Umgebung | 10 % | [`Dockerfile`](Dockerfile) · [`compose.yaml`](compose.yaml) · [`ci.yml`](.github/workflows/ci.yml) · BERICHT §2 |
+| Netzarchitektur | 15 % | [`models.py::build_cnn`](src/glys_rul/models.py) · BERICHT §3 |
+| Alternative Architektur | 15 % | [`build_mlp`, `build_monotone_mlp`](src/glys_rul/models.py) · BERICHT §4 |
+| Trainingseinstellungen | 15 % | [`train`](src/glys_rul/train.py) · [`dataset`](src/glys_rul/dataset.py) · BERICHT §5 |
+| Schätzgenauigkeit | 20 % | [`evaluate`](src/glys_rul/evaluate.py) · [`figures/`](reports/figures) · BERICHT §6 |
 
 ## Reproducibility
 
-`results.json` holds metrics only; volatile provenance lives in `run_meta.json`. That
-split is what makes the guarantee checkable: CI builds the pinned container, runs the
-pipeline, and compares against the committed copy.
-
-**The guarantee, stated at the precision it actually holds.** Measured across two
-different machines (this host and a GitHub runner):
+`results.json` holds metrics only; volatile provenance sits in `run_meta.json`. CI builds
+the pinned container, runs the pipeline and compares — so the claim is machine-checked.
 
 | | reproducibility |
 |---|---|
-| Dataset audit, error floors, features, labels, learning curve, control | **exact** |
-| All four baselines | **exact** |
-| `feature_mlp`, `monotone_mlp` | **exact** |
-| `cnn` | agrees to ~1.5e-3 relative |
+| Data audit, floors, features, labels, curve, control, all four baselines | **exact** |
+| `feature_mlp`, `monotone_mlp` | within 1e-4 (observed ~4e-7) |
+| `cnn`, `cnn_unmasked_background` | within 1e-2 (observed ~1.5e-3) |
 
-Only the convolutional model varies, because Conv2D dispatches on CPU SIMD features and a
-different processor takes a different kernel. Plain matrix multiplies do not, which is why
-both dense networks reproduce bit-for-bit.
+Everything in numpy/scikit-learn is exact anywhere. TensorFlow-trained models shift in the
+low-order digits between CPU models because kernels dispatch on SIMD capability — mildly
+for dense matmuls, more for convolution. [`compare_results.py`](scripts/compare_results.py)
+holds each part as tightly as it genuinely permits; a 5 % drift still fails the build.
 
-Rather than weaken the whole check to a tolerance,
-[`scripts/compare_results.py`](scripts/compare_results.py) holds each part to the precision
-it genuinely guarantees — exact where exactness holds, bounded where it does not. A
-regression in any exact component still fails the build.
+Stack: digest-pinned base image · locked dependencies · `platform: linux/amd64` ·
+`TF_ENABLE_ONEDNN_OPTS=0` · CPU-only · single-threaded · all generators seeded.
 
-The determinism stack: base image pinned by digest · dependencies from a lockfile ·
-`platform: linux/amd64` · `TF_ENABLE_ONEDNN_OPTS=0` (oneDNN otherwise dispatches different
-kernels on AVX2 versus AVX-512 hosts) · CPU-only · single-threaded · all generators seeded.
-
-## Repository layout
+## Layout
 
 ```
-src/glys_rul/     pipeline modules, one responsibility each
-tests/            176 tests; the slow ones touch real data or train models
-data/raw/         the 11 supplied images + colour scale, with an md5 manifest
-reports/          committed results, feature table and figures
-web/              the interactive demo (static, no build step)
-docs/design/      the design specification
+src/glys_rul/   pipeline modules, one responsibility each
+tests/          182 tests; slow ones touch real data or train models
+data/raw/       the 11 supplied images + colour scale, md5-manifested
+reports/        committed results, feature table, campaign ledger, figures
+web/            interactive demo (static, no build step)
 ```
-
----
 
 ## Understanding the scores
 
-**MAE — mean absolute error, in hours.** The average distance between predicted and actual
-remaining life. Directly interpretable: an MAE of 9.2 h means predictions are typically
-about nine hours out. Computed as `mean(|predicted − actual|)` over the out-of-fold
-predictions.
+**MAE** — mean absolute error in hours; directly interpretable. **RMSE** — squares errors
+first, so large misses dominate; reported because the networks train on MSE. **R²** —
+fraction of label variance explained; negative means worse than predicting the average.
+**Skill** — `1 − MAE_model / MAE_mean`; 0 means no better than guessing, and it exists
+because a raw MAE is meaningless without knowing the label spread.
 
-**RMSE — root mean squared error, in hours.** The same idea, but errors are squared before
-averaging, so large mistakes count disproportionately. Reported because the neural models
-are trained on mean squared error, making RMSE the quantity they actually optimise. RMSE
-is always ≥ MAE; a large gap between them means a few big misses rather than uniform
-inaccuracy.
-
-**R² — coefficient of determination.** The fraction of label variance the model explains.
-1.0 is perfect, 0 means no better than predicting the average, and negative means worse
-than that. Both the `mean` baseline (−0.432) and the CNN (−1.866) are negative here, which
-is a real statement: on held-out groups they are worse than a constant.
-
-**Skill score.** `1 − MAE_model / MAE_baseline`, where the baseline is the
-cross-validated mean predictor. This exists because a raw MAE is meaningless without
-knowing the label spread — 9.2 h could be excellent or useless depending on whether labels
-span 20 hours or 2000. 1.0 is perfect, 0 means the model adds nothing over guessing,
-negative means it actively hurts.
-
-**The floors — the most important numbers here.** Because five image pairs are
-byte-identical while carrying different labels, no function of the pixels can distinguish
-them. The best any model can do is predict one constant per pair: the median minimises
-MAE, the mean minimises RMSE. Summed over the dataset this gives
+**The floors.** Five byte-identical pairs carry different labels, so no function of the
+pixels can separate them. The best any model can do is one constant per pair — the median
+minimises MAE, the mean minimises RMSE:
 
 ```
-MAE floor  = 15   / 11        = 1.364 h
-RMSE floor = √(24.5 / 11)     = 1.492 h
+MAE floor  = 15   / 11      = 1.364 h
+RMSE floor = √(24.5 / 11)   = 1.492 h
 ```
 
-computed at runtime in [`audit.py::error_floors`](src/glys_rul/audit.py) — never
-hard-coded, so a swapped dataset gets its own bound. Every accuracy figure draws these
-lines. Reaching them means the model is optimal; **beating them means something leaked**,
-and a test in the suite fails the build if any model reports a score below the floor.
-
-**Why the best model is 9.20 h and not 1.36 h.** The floor bounds what is achievable given
-the *labels*. A second, separate bound comes from having only *six distinct thermal
-states*: under leave-one-group-out each fold trains on five and must predict a sixth. For
-interior states that is interpolation; for the two endpoints it is extrapolation beyond
-anything observed.
-
-**And that endpoint behaviour is exactly why the neural model wins.** Splitting the error:
-
-| Model | endpoint MAE [h] | interior MAE [h] |
-|---|---:|---:|
-| **feature_mlp** | **5.65** | 10.53 |
-| isotonic | 20.67 | **8.31** |
-
-Isotonic is *better in the interior*. The network's entire advantage comes from the edges,
-and the reason is structural — isotonic regression clips to its training range and cannot
-predict outside it:
-
-| held-out group | isotonic | feature_mlp | truth |
-|---|---:|---:|---:|
-| 3 h | 25.00 | **11.14** | 3 |
-| 100 h | 80.00 | **97.33** | 100 |
-
-So 9.20 h versus 11.68 h is not a generally better fit; it is one model not collapsing
-where the other structurally must. On a dataset of six states where every fold has to
-predict an endpoint, that is the property that matters.
-
-The learning curve says the same thing from the other direction: every additional state
-roughly halves the error, with no sign of flattening.
+Computed at runtime in [`audit.py::error_floors`](src/glys_rul/audit.py), never hard-coded,
+so a swapped dataset gets its own bound. Every accuracy figure draws these lines. Reaching
+them means the model is optimal; **beating them means something leaked** — and a test fails
+the build if any model reports a score below the floor.
