@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glys Engine · Remaining Useful Life</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;500;700&family=IBM+Plex+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0b0c0f; --panel:#13151a; --panel-2:#191c22; --rule:#262a33;
+    --ink:#e8eaef; --ink-2:#9aa1af; --ink-3:#5f6673;
+    --cold:#1a1d24; --warm:#ff9500; --hot:#ffc002; --peak:#ff2f8e;
+    --grid:rgba(255,255,255,.028);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(900px 500px at 12% -10%, rgba(255,149,3,.07), transparent 60%),
+      radial-gradient(700px 420px at 92% 8%, rgba(255,47,142,.06), transparent 60%),
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0/100% 34px,
+      var(--void);
+    color:var(--ink);
+    font:400 15px/1.55 "IBM Plex Mono", ui-monospace, monospace;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{max-width:1140px;margin:0 auto;padding:44px 22px 72px}
+
+  header{display:flex;align-items:flex-end;justify-content:space-between;
+    gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:18px}
+  .mark{font:700 12px/1 "IBM Plex Mono",monospace;letter-spacing:.34em;
+    color:var(--warm);text-transform:uppercase}
+  h1{font:300 40px/1.02 "Oxanium",system-ui,sans-serif;letter-spacing:-.015em;margin:10px 0 0}
+  h1 b{font-weight:700}
+  .sub{color:var(--ink-3);font-size:12.5px;letter-spacing:.02em;max-width:46ch;margin-top:8px}
+  .badge{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);
+    border:1px solid var(--rule);border-radius:2px;padding:7px 11px;white-space:nowrap}
+
+  .grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
+    gap:26px;margin-top:26px;align-items:start}
+  @media (max-width:920px){.grid{grid-template-columns:1fr}}
+
+  .panel{background:linear-gradient(180deg,var(--panel-2),var(--panel));
+    border:1px solid var(--rule);border-radius:3px;padding:20px}
+  .cap{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--ink-3);margin-bottom:14px}
+
+  svg.engine{width:100%;height:auto;display:block}
+  svg.engine .part{transition:fill .32s cubic-bezier(.4,0,.2,1)}
+
+  .scale{margin-top:16px}
+  .ramp{height:8px;border-radius:1px;
+    background:linear-gradient(90deg,#000 0%,#ff9503 55%,#ffc002 69%,#ff2f8e 100%)}
+  .ticks{display:flex;justify-content:space-between;color:var(--ink-3);
+    font-size:10.5px;margin-top:6px;letter-spacing:.08em}
+
+  label.ctl{display:block;margin-bottom:19px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .row span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+  .row b{font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;
+    background:var(--rule);border-radius:2px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:var(--ink);border:3px solid var(--void);
+    box-shadow:0 0 0 1px var(--rule);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border:3px solid var(--void);
+    border-radius:50%;background:var(--ink);box-shadow:0 0 0 1px var(--rule);cursor:grab}
+
+  .readout{margin-top:4px;border-top:1px solid var(--rule);padding-top:18px}
+  .hero{display:flex;align-items:baseline;gap:9px}
+  .hero .n{font:700 62px/.9 "Oxanium",system-ui,sans-serif;letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums;color:var(--hot)}
+  .hero .u{font-size:13px;letter-spacing:.2em;color:var(--ink-3);text-transform:uppercase}
+  .interval{margin-top:13px;font-size:12px;color:var(--ink-2)}
+  .bar{position:relative;height:4px;background:var(--rule);border-radius:2px;margin-top:9px}
+  .bar i{position:absolute;top:0;bottom:0;background:var(--warm);opacity:.55;border-radius:2px}
+  .bar u{position:absolute;top:-3px;width:2px;height:10px;background:var(--hot)}
+
+  table{width:100%;border-collapse:collapse;margin-top:17px;font-size:12px}
+  td{padding:6px 0;border-top:1px solid var(--rule);color:var(--ink-2)}
+  td:last-child{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+
+  .note{margin-top:15px;font-size:11.5px;line-height:1.6;color:var(--ink-3);
+    border-left:2px solid var(--rule);padding-left:11px}
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--rule);
+    color:var(--ink-3);font-size:11px;letter-spacing:.05em;
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  a{color:var(--ink-2)}
+
+  .fade{opacity:0;transform:translateY(9px);animation:rise .62s cubic-bezier(.2,.7,.3,1) forwards}
+  .fade:nth-child(2){animation-delay:.07s}
+  .fade:nth-child(3){animation-delay:.14s}
+  @keyframes rise{to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    .fade{animation:none;opacity:1;transform:none}
+    svg.engine .part{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="fade">
+    <div>
+      <div class="mark">Glys Fleet · Predictive Maintenance</div>
+      <h1>Remaining <b>Useful Life</b></h1>
+      <p class="sub">Estimated from the thermal signature of a spaceship engine.
+         Drag a component's temperature to see the estimate respond.</p>
+    </div>
+    <div class="badge" id="provenance">loading model…</div>
+  </header>
+
+  <div class="grid">
+    <section class="panel fade">
+      <div class="cap">Thermal view</div>
+      <svg class="engine" viewBox="0 0 640 300" role="img"
+           aria-label="Engine thermal view: intake cone, main body and pylon">
+        <polygon id="svg-cone"  class="part" points="24,112 152,84 152,236 24,208"/>
+        <rect    id="svg-body"  class="part" x="160" y="82"  width="296" height="156"/>
+        <rect    id="svg-pylon" class="part" x="464" y="96"  width="152" height="42"/>
+      </svg>
+      <div class="scale">
+        <div class="ramp"></div>
+        <div class="ticks"><span>0 °C</span><span>400</span><span>800</span><span>1200 °C</span></div>
+      </div>
+    </section>
+
+    <section class="panel fade">
+      <div class="cap">Component temperatures</div>
+
+      <label class="ctl"><div class="row"><span>Intake cone</span><b id="v-cone">827 °C</b></div>
+        <input type="range" id="cone" min="0" max="1200" step="1" value="827"></label>
+      <label class="ctl"><div class="row"><span>Main body</span><b id="v-body">1194 °C</b></div>
+        <input type="range" id="body" min="0" max="1200" step="1" value="1194"></label>
+      <label class="ctl"><div class="row"><span>Pylon</span><b id="v-pylon">1194 °C</b></div>
+        <input type="range" id="pylon" min="0" max="1200" step="1" value="1194"></label>
+
+      <div class="readout">
+        <div class="cap" style="margin-bottom:9px">Estimate</div>
+        <div class="hero"><span class="n" id="rul">–</span><span class="u">hours left</span></div>
+        <div class="interval" id="interval">&nbsp;</div>
+        <div class="bar" id="bar" hidden><i></i><u></u></div>
+
+        <table>
+          <tr><td>Total thermal load</td><td id="total">–</td></tr>
+          <tr><td id="cf-label">To reach the next milestone</td><td id="cf">–</td></tr>
+        </table>
+
+        <p class="note" id="note">
+          The estimator reads the <em>summed</em> thermal load, so cooling any component
+          by the same amount has the same effect. The per-component breakdown is
+          diagnostic rather than predictive — a deliberate choice: at eleven training
+          samples the sum generalises considerably better than three separate inputs.
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span>Trained on six distinguishable thermal states · estimates between them are interpolation</span>
+    <span><a href="https://github.com/Cl3mi/master_deep-learning">source &amp; report</a></span>
+  </footer>
+</div>
+
+<script>
+const STOPS = [[0,[10,11,14]],[657,[255,149,3]],[827,[255,192,2]],[1194,[255,47,145]],[1200,[255,40,150]]];
+function colourFor(t){
+  for(let i=1;i<STOPS.length;i++){
+    if(t<=STOPS[i][0]){
+      const [t0,c0]=STOPS[i-1],[t1,c1]=STOPS[i];
+      const f=(t-t0)/((t1-t0)||1);
+      return `rgb(${c0.map((v,k)=>Math.round(v+f*(c1[k]-v))).join(',')})`;
+    }
+  }
+  return 'rgb(255,40,150)';
+}
+
+let MODEL=null;
+const $=id=>document.getElementById(id);
+const IDS=['cone','body','pylon'];
+
+function forward(total){
+  let x=[(total-MODEL.feature_mean[0])/MODEL.feature_std[0]];
+  for(const layer of MODEL.layers){
+    const out=layer.b.slice();
+    for(let j=0;j<out.length;j++){
+      for(let i=0;i<x.length;i++) out[j]+=x[i]*layer.w[i][j];
+      if(layer.activation==='relu') out[j]=Math.max(out[j],0);
+    }
+    x=out;
+  }
+  return x[0]*MODEL.target_scale;
+}
+
+function requiredTotal(targetRul){
+  for(let t=1200*3;t>=0;t-=15) if(forward(t)>=targetRul) return t;
+  return null;
+}
+
+function update(){
+  const temps=IDS.map(id=>Number($(id).value));
+  IDS.forEach((id,i)=>{
+    $('v-'+id).textContent=temps[i]+' °C';
+    $('svg-'+id).setAttribute('fill',colourFor(temps[i]));
+  });
+  const total=temps.reduce((a,b)=>a+b,0);
+  $('total').textContent=total+' °C';
+  if(!MODEL) return;
+
+  const rul=forward(total);
+  $('rul').textContent=rul.toFixed(1);
+  $('rul').style.color=colourFor(1200-Math.max(0,Math.min(100,rul))*12);
+
+  const half=MODEL.interval_halfwidth||0;
+  if(half){
+    const lo=rul-half, hi=rul+half;
+    $('interval').textContent=`${MODEL.coverage||90}% prediction interval  ${lo.toFixed(1)} – ${hi.toFixed(1)} h`;
+    const bar=$('bar'); bar.hidden=false;
+    const clamp=v=>Math.max(0,Math.min(100,v));
+    bar.querySelector('i').style.left=clamp(lo)+'%';
+    bar.querySelector('i').style.width=Math.max(1,clamp(hi)-clamp(lo))+'%';
+    bar.querySelector('u').style.left=clamp(rul)+'%';
+  }
+
+  const milestone=Math.ceil((rul+10)/10)*10;
+  const need=requiredTotal(milestone);
+  $('cf-label').textContent=`To reach ${milestone} h, total load must fall below`;
+  $('cf').textContent = need===null ? 'not reachable' : need+' °C';
+}
+
+fetch('model.json')
+  .then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(d=>{
+    MODEL=d;
+    $('provenance').textContent=`${d.model||'feature_mlp'} · cross-validated MAE ${(d.cv_mae??0).toFixed(2)} h`;
+    update();
+  })
+  .catch(()=>{ $('provenance').textContent='model.json not found — run the pipeline'; });
+
+IDS.forEach(id=>$(id).addEventListener('input',update));
+update();
+</script>
+</body>
+</html>
