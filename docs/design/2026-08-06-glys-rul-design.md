@@ -92,8 +92,13 @@ Values are quantised by the LUT (3685 entries over 1200 °C ≈ 0.33 °C per ste
 cold end reads 0.33 °C rather than exactly zero. These are the pipeline's own numbers —
 the report must quote `reports/results.json`, never a figure derived by hand.
 
-`Σ °C` is **strictly monotone decreasing in RUL**. Three scalars therefore carry 100 %
-of the available information.
+`Σ °C` is **strictly decreasing across the six distinct thermal states**, and merely
+non-increasing across the eleven files — byte-identical pairs necessarily share a value.
+That distinction is the reason splits must be grouped by content hash: at sample level the
+relationship is not injective, and treating the eleven files as eleven independent
+observations overstates the evidence by nearly a factor of two.
+
+Three scalars therefore carry 100 % of the available information.
 
 ### 2.5 Three traps this creates
 
