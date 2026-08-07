@@ -78,6 +78,9 @@
   .bar i{position:absolute;top:0;bottom:0;background:var(--warm);opacity:.55;border-radius:2px}
   .bar u{position:absolute;top:-3px;width:2px;height:10px;background:var(--hot)}
 
+  .warn{margin-top:12px;font-size:11.5px;line-height:1.55;color:var(--peak);
+    border:1px solid rgba(255,47,142,.35);background:rgba(255,47,142,.07);
+    border-radius:2px;padding:8px 10px}
   table{width:100%;border-collapse:collapse;margin-top:17px;font-size:12px}
   td{padding:6px 0;border-top:1px solid var(--rule);color:var(--ink-2)}
   td:last-child{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -142,6 +145,7 @@
         <div class="hero"><span class="n" id="rul">–</span><span class="u">hours left</span></div>
         <div class="interval" id="interval">&nbsp;</div>
         <div class="bar" id="bar" hidden><i></i><u></u></div>
+        <div class="warn" id="warn" hidden></div>
 
         <table>
           <tr><td>Total thermal load</td><td id="total">–</td></tr>
@@ -210,8 +214,16 @@ function update(){
   if(!MODEL) return;
 
   const rul=forward(total);
-  $('rul').textContent=rul.toFixed(1);
+  const range=MODEL.observed_total_range;
+  const outside=range && (total<range[0]||total>range[1]);
+
+  $('rul').textContent = rul<0 ? '0.0' : rul.toFixed(1);
   $('rul').style.color=colourFor(1200-Math.max(0,Math.min(100,rul))*12);
+  $('warn').hidden=!outside;
+  $('warn').textContent = outside
+    ? `⚠ total load ${total} °C is outside the observed range `
+      + `${range[0].toFixed(0)}–${range[1].toFixed(0)} °C — this is extrapolation, not estimation`
+    : '';
 
   const half=MODEL.interval_halfwidth||0;
   if(half){

@@ -155,6 +155,9 @@ def run_evaluation(
             ),
         )
 
+    if include_neural:
+        _export_demo_model(totals, target, models, predictions)
+
     # How much of the error is simply lack of data? Retrain on 2..n-1 groups.
     from .controls import shuffled_label_control
 
@@ -215,6 +218,42 @@ def run_evaluation(
         output_dir, results, np.asarray(totals).ravel(), target, models, predictions
     )
     return results
+
+
+def _export_demo_model(totals, target, models, predictions) -> None:
+    """Refit the reported model on all data and export it for the browser demo.
+
+    The interval half-width comes from the *out-of-fold* residuals, not from the
+    refit's own errors — otherwise the demo would advertise a confidence it has
+    not earned.
+    """
+    from .conformal import residual_quantile
+    from .determinism import configure
+    from .estimators import KerasRegressor
+    from .export import export_mlp
+    from .models import build_mlp
+
+    configure(seed=0)
+    final = KerasRegressor(lambda: build_mlp(n_features=1), epochs=config.MLP_EPOCHS)
+    final.fit(totals, target)
+
+    residuals = np.asarray(predictions["feature_mlp"], dtype=float) - target
+    export_mlp(
+        final,
+        config.WEB_DIR / "model.json",
+        ["total_c"],
+        model="feature_mlp",
+        cv_mae=models["feature_mlp"]["mae"],
+        interval_halfwidth=round(float(residual_quantile(residuals)), 4),
+        coverage=int(round((1.0 - config.CONFORMAL_ALPHA) * 100)),
+        # The demo flags inputs outside this range: the model has seen six
+        # thermal states and anything beyond them is extrapolation, not estimation.
+        observed_total_range=[
+            round(float(np.min(totals)), 3),
+            round(float(np.max(totals)), 3),
+        ],
+        observed_rul_range=[float(np.min(target)), float(np.max(target))],
+    )
 
 
 def _write_figures(output_dir, results, totals, target, models, predictions) -> None:
