@@ -164,13 +164,20 @@ GitHub-Runner):
 |---|---|
 | Datenaudit, Fehleruntergrenzen, Merkmale, Labels, Lernkurve, Kontrolle | **exakt** |
 | alle vier Baselines | **exakt** |
-| `feature_mlp`, `monotone_mlp` | **exakt** |
-| `cnn` | Abweichung ~1,5e-3 relativ |
+| `feature_mlp`, `monotone_mlp` | innerhalb 1e-4 (gemessen ~4e-7) |
+| `cnn`, `cnn_unmasked_background` | innerhalb 1e-2 (gemessen ~1,5e-3) |
 
-Nur das Faltungsmodell weicht ab: `Conv2D` wählt seine Kernel anhand der
-SIMD-Fähigkeiten der CPU aus, ein anderer Prozessor nimmt also einen anderen Codepfad.
-Gewöhnliche Matrixmultiplikationen tun das nicht — deshalb sind beide dichten Netze
-bitgleich.
+Alles, was in numpy und scikit-learn gerechnet wird, ist überall exakt. Alles, was in
+TensorFlow trainiert wird, verschiebt sich zwischen CPU-Modellen in den hinteren Stellen,
+weil die Kernel anhand der SIMD-Fähigkeiten ausgewählt werden — bei Matrixmultiplikationen
+schwach, bei Faltungen deutlich stärker. Daher zwei Stufen statt einer, damit jeder Teil so
+eng geprüft wird, wie er es wirklich zulässt.
+
+**Die Behauptung wurde dabei zweimal enger gefasst.** Zuerst „byteidentisch überall" — das
+galt nur für Host gegen Container auf derselben Maschine. Dann „nur das CNN weicht ab" —
+das galt für ein Paar von Maschinen, aber GitHub-Runner laufen auf unterschiedlichen
+CPU-Modellen, und dort weichen auch die dichten Netze in der sechsten Stelle ab. Erst die
+jetzige Formulierung hält der Messung stand.
 
 Eine ursprünglich formulierte Behauptung „byteidentisch" galt nur für Host gegen Container
 auf **derselben** Maschine und war maschinenübergreifend zu stark. Statt die gesamte

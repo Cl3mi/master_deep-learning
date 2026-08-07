@@ -16,18 +16,24 @@ from __future__ import annotations
 import json
 import sys
 
-#: Models whose kernels dispatch on CPU features and so vary across machines.
-#: Every convolutional variant qualifies, so match by prefix rather than by an
-#: explicit list that a new ablation would silently fall outside of.
-HARDWARE_DEPENDENT_PREFIX = "cnn"
+#: Anything trained in TensorFlow depends on the host's SIMD capabilities, so its
+#: result shifts in the low-order digits between CPU models. Two tiers, because the
+#: magnitude differs by four orders: dense layers are plain matrix multiplies and
+#: agree to ~1e-6, while convolution dispatches far more aggressively.
+DENSE_MODELS = ("feature_mlp", "monotone_mlp")
+CONVOLUTIONAL_PREFIX = "cnn"
+
+DENSE_TOLERANCE = 1e-4
+CONVOLUTIONAL_TOLERANCE = 1e-2
 
 
-def is_hardware_dependent(name: str) -> bool:
-    """True for models whose result depends on the host's SIMD capabilities."""
-    return name.startswith(HARDWARE_DEPENDENT_PREFIX)
-
-#: Relative tolerance allowed for those models. Observed across two machines: 1.5e-3.
-RELATIVE_TOLERANCE = 1e-2
+def tolerance_for(name: str) -> float | None:
+    """Relative tolerance for a model, or None if it must match exactly."""
+    if name.startswith(CONVOLUTIONAL_PREFIX):
+        return CONVOLUTIONAL_TOLERANCE
+    if name in DENSE_MODELS:
+        return DENSE_TOLERANCE
+    return None
 
 EXACT_SECTIONS = (
     "dataset",
@@ -57,12 +63,13 @@ def compare(golden: dict, fresh: dict) -> list[str]:
     for name in sorted(golden["models"]):
         for metric, want in golden["models"][name].items():
             got = fresh["models"][name][metric]
-            if is_hardware_dependent(name):
+            tolerance = tolerance_for(name)
+            if tolerance is not None:
                 scale = max(abs(want), 1e-9)
-                if abs(got - want) / scale > RELATIVE_TOLERANCE:
+                if abs(got - want) / scale > tolerance:
                     failures.append(
                         f"{name}.{metric}: {got} vs {want} "
-                        f"(relative {abs(got - want) / scale:.2e} > {RELATIVE_TOLERANCE:.0e})"
+                        f"(relative {abs(got - want) / scale:.2e} > {tolerance:.0e})"
                     )
             elif got != want:
                 failures.append(
@@ -88,12 +95,14 @@ def main(argv: list[str]) -> int:
             print(f"  - {failure}")
         return 1
 
-    exact = [n for n in sorted(golden["models"]) if not is_hardware_dependent(n)]
-    tolerated = [n for n in sorted(golden["models"]) if is_hardware_dependent(n)]
+    exact = [n for n in sorted(golden["models"]) if tolerance_for(n) is None]
+    dense = [n for n in sorted(golden["models"]) if tolerance_for(n) == DENSE_TOLERANCE]
+    conv = [n for n in sorted(golden["models"]) if tolerance_for(n) == CONVOLUTIONAL_TOLERANCE]
     print("Reproduction verified.")
-    print(f"  exact:     {', '.join(EXACT_SECTIONS)}")
-    print(f"  exact:     {', '.join(exact)}")
-    print(f"  tolerance: {', '.join(tolerated)} within {RELATIVE_TOLERANCE:.0e}")
+    print(f"  exact:  {', '.join(EXACT_SECTIONS)}")
+    print(f"  exact:  {', '.join(exact)}")
+    print(f"  <{DENSE_TOLERANCE:.0e}:  {', '.join(dense)}")
+    print(f"  <{CONVOLUTIONAL_TOLERANCE:.0e}:  {', '.join(conv)}")
     return 0
 
 
