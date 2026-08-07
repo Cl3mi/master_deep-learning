@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev
+      - name: Lint
+        run: uv run ruff check src tests
+      - name: Test suite
+        run: uv run pytest -v
+
+  reproduce:
+    name: containerised reproduction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reproduce the pipeline in the pinned container
+        run: docker compose up --build --exit-code-from reproduce reproduce
+
+      # The central reproducibility claim: a fresh container run must recreate
+      # the committed results byte for byte. run_meta.json is deliberately not
+      # compared, since versions and platform differ per machine by design.
+      - name: Verify results match the committed golden copy
+        run: git diff --exit-code reports/results.json
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/
