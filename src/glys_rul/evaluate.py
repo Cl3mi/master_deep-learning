@@ -174,7 +174,33 @@ def run_evaluation(
     shuffled = shuffled_label_control(target, groups, np.random.default_rng(0))
     control = cross_validate(BASELINES["isotonic"], totals, shuffled, groups)
 
+    # Where the error lives: holding out an endpoint group forces extrapolation
+    # beyond every state the fold has seen, while interior groups interpolate.
+    best_name = min(models, key=lambda name: models[name]["mae"])
+    best_predictions = np.asarray(predictions[best_name], dtype=float)
+    absolute_error = np.abs(best_predictions - target)
+    endpoint = (target == target.min()) | (target == target.max())
+    decomposition = {
+        "model": best_name,
+        "endpoint_mae": round(float(absolute_error[endpoint].mean()), 6),
+        "interior_mae": round(float(absolute_error[~endpoint].mean()), 6),
+        "n_endpoint": int(endpoint.sum()),
+        "n_interior": int((~endpoint).sum()),
+    }
+
+    scale = ColorScale.from_image(scale_path)
+    luminance = scale.lut @ np.array([0.299, 0.587, 0.114])
+    scale_report = {
+        "lut_entries": int(len(scale.temps)),
+        "max_roundtrip_error_c": round(float(scale.max_roundtrip_error()), 4),
+        "luminance_peak": round(float(luminance.max()), 4),
+        "luminance_peak_at_c": round(float(scale.temps[int(luminance.argmax())]), 4),
+        "luminance_at_hot_end": round(float(luminance[-1]), 4),
+    }
+
     results = {
+        "colour_scale": scale_report,
+        "error_decomposition": decomposition,
         "learning_curve": learning_curve,
         "shuffled_label_control": {
             "mae": round(control.metrics["mae"], 6),

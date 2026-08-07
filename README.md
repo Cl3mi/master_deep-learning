@@ -235,11 +235,29 @@ and a test in the suite fails the build if any model reports a score below the f
 
 **Why the best model is 9.20 h and not 1.36 h.** The floor bounds what is achievable given
 the *labels*. A second, separate bound comes from having only *six distinct thermal
-states*: under leave-one-group-out, each fold trains on five states and must predict a
-sixth. For interior states that is interpolation and works well; for the two endpoints it
-is extrapolation beyond anything observed. Holding out the 3 h group, the model has seen
-nothing hotter than 24 h and predicts 25 h; holding out 100 h, it has seen nothing cooler
-than 82 h and predicts 80 h. Those two folds carry most of the remaining error — 20.7 h
-against 8.3 h for the interior. The learning curve above says the same thing from the
-other direction: every additional state roughly halves the error, with no sign of
-flattening.
+states*: under leave-one-group-out each fold trains on five and must predict a sixth. For
+interior states that is interpolation; for the two endpoints it is extrapolation beyond
+anything observed.
+
+**And that endpoint behaviour is exactly why the neural model wins.** Splitting the error:
+
+| Model | endpoint MAE [h] | interior MAE [h] |
+|---|---:|---:|
+| **feature_mlp** | **5.65** | 10.53 |
+| isotonic | 20.67 | **8.31** |
+
+Isotonic is *better in the interior*. The network's entire advantage comes from the edges,
+and the reason is structural — isotonic regression clips to its training range and cannot
+predict outside it:
+
+| held-out group | isotonic | feature_mlp | truth |
+|---|---:|---:|---:|
+| 3 h | 25.00 | **11.14** | 3 |
+| 100 h | 80.00 | **97.33** | 100 |
+
+So 9.20 h versus 11.68 h is not a generally better fit; it is one model not collapsing
+where the other structurally must. On a dataset of six states where every fold has to
+predict an endpoint, that is the property that matters.
+
+The learning curve says the same thing from the other direction: every additional state
+roughly halves the error, with no sign of flattening.

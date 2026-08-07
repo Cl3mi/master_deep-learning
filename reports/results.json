@@ -1,9 +1,23 @@
 {
+  "colour_scale": {
+    "luminance_at_hot_end": 123.624,
+    "luminance_peak": 188.949,
+    "luminance_peak_at_c": 825.0814,
+    "lut_entries": 3685,
+    "max_roundtrip_error_c": 12.7036
+  },
   "dataset": {
     "n_files": 11,
     "n_groups": 6,
     "rul_max": 100.0,
     "rul_min": 3.0
+  },
+  "error_decomposition": {
+    "endpoint_mae": 5.403326,
+    "interior_mae": 10.038101,
+    "model": "feature_mlp",
+    "n_endpoint": 2,
+    "n_interior": 9
   },
   "excluded_features": [
     "cone_px",

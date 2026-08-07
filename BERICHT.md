@@ -2,9 +2,11 @@
 
 **Abschließende Projektarbeit — Industrial Computing (DIBSE 26), Teil 2**
 
-Alle Zahlen in diesem Bericht stammen aus [`reports/results.json`](reports/results.json)
-und werden von der Pipeline erzeugt, nicht von Hand eingetragen. Reproduktion mit einem
-Befehl: `docker compose up`.
+Alle Zahlen in diesem Bericht stammen aus den von der Pipeline erzeugten Artefakten —
+[`reports/results.json`](reports/results.json),
+[`reports/experiments.csv`](reports/experiments.csv),
+[`reports/features.csv`](reports/features.csv) und `web/model.json` — und sind nicht von
+Hand eingetragen. Reproduktion mit einem Befehl: `docker compose up`.
 
 ---
 
@@ -217,8 +219,27 @@ Zwei Defekte traten beim Messen zutage und wurden behoben:
    nun unverändert durchgereicht.
 2. **Augmentation ersetzte statt zu erweitern.** Die Funktion gab dieselbe Anzahl
    transformierter Bilder zurück, das Netz sah also **kein einziges unverändertes
-   Beispiel**. Es trainiert jetzt auf den Originalen plus drei augmentierten Runden, was
-   den MAE von 47,0 auf 41,8 verbessert.
+   Beispiel** — das war Verfälschung, keine Augmentation. Es trainiert jetzt auf den
+   Originalen plus augmentierten Runden.
+
+**Nachtrag aus der Kampagne: Augmentation hilft dem CNN hier gar nicht.** Bei der
+festgelegten Konfiguration verbesserte sie das Ergebnis, doch die systematische Suche
+(§7) durchsucht `augment_rounds` von 0 bis 4 und widerspricht dieser Einzelbeobachtung
+deutlich:
+
+| augmentierte Runden | bester MAE [h] | Versuche |
+|---:|---:|---:|
+| **0** | **24,87** | 5 |
+| 1 | 28,09 | 3 |
+| 2 | 28,76 | 3 |
+| 3 | 33,63 | 2 |
+| 4 | 55,15 | 1 |
+
+Der beste CNN-Lauf verwendet **keine** Augmentation, und der Fehler wächst monoton mit
+jeder zusätzlichen Runde. Bei neun Trainingsbildern verschiebt geometrische Augmentation
+offenbar mehr Signal, als sie an Robustheit gewinnt. Die Einzelmessung an einer festen
+Konfiguration war also nicht verallgemeinerbar — ein Beispiel dafür, warum die Kampagne
+existiert.
 
 ---
 
@@ -235,22 +256,23 @@ Dense(16, relu) → Dense(8, relu) → Dense(1, linear)      209 Parameter
 
 Ein Ergebnis war dabei überraschend und widerlegte die eigene Erwartung. Naheliegend wäre,
 dem Netz alle drei Regionstemperaturen zu geben, da sie strikt mehr Information enthalten
-als ihre Summe. Gemessen:
+als ihre Summe. Die Kampagne (§7) durchsucht beide Repräsentationen und misst das Gegenteil:
 
-| Eingabe | MAE [h] | Streuung über Seeds |
-|---|---:|---:|
-| nur Σ °C | **10,93** | 0,41 |
-| drei Regionen | 33,97 | **5,13** |
+| Eingabe | bester MAE [h] | Median | Versuche |
+|---|---:|---:|---:|
+| nur Σ °C | **8,05** | **12,71** | 16 |
+| drei Regionstemperaturen | 14,55 | 22,10 | 12 |
 
-Mit drei Merkmalen ist das Netz **schlechter als der Mittelwert** und extrem instabil. Bei
-elf Beispielen ist die Summe eine physikalisch motivierte Dimensionsreduktion, die stärker
-regularisiert als alles, was der Optimierer lernen könnte. Merkmalsentwurf schlägt hier
-Modellkapazität.
+**Alle zehn führenden Konfigurationen verwenden die Summe.** Bei elf Beispielen ist sie
+eine physikalisch motivierte Dimensionsreduktion, die stärker regularisiert als alles, was
+der Optimierer aus drei getrennten Eingaben lernen könnte. Merkmalsentwurf schlägt hier
+Modellkapazität — genau die Idee, die die Aufgabenstellung mit den „nummerischen Vektoren"
+andeutet.
 
 **Monotone Variante.** Zusätzlich wurde ein Netz mit nichtnegativen Gewichten auf einer
 negierten Eingabe umgesetzt. Es ist strukturell garantiert monoton fallend in der
 Temperatur: ein heißeres Triebwerk kann nie mehr Restlebensdauer erhalten, auch bei
-Extrapolation. Nachgewiesen an 200 zufälligen Paaren nach dem Training; das unbeschränkte
+Extrapolation. Nachgewiesen an 30 zufälligen Paaren nach dem Training (Test `test_monotone_property_holds_across_many_random_pairs`); das unbeschränkte
 Netz verletzt die Eigenschaft auf denselben Paaren.
 
 Die Garantie kostet Genauigkeit (20,65 h gegenüber 9,20 h), halbiert aber die Streuung über
@@ -316,19 +338,39 @@ einzelnen Merkmal: der Zusammenhang ist monoton, aber deutlich nichtlinear.
 Das schmale rote Band ist die erreichbare Genauigkeit (±1,36 h). Es ist gegen die
 tatsächlichen Fehler kaum sichtbar — genau das ist die Aussage.
 
-**Woher der verbleibende Fehler stammt.** Die Untergrenze begrenzt, was angesichts der
-*Labels* möglich ist. Eine zweite Grenze folgt daraus, dass nur **sechs verschiedene
-Zustände** existieren: jede Faltung trainiert auf fünf und muss den sechsten vorhersagen.
-Für innere Zustände ist das Interpolation, für die beiden Randzustände Extrapolation über
-alles Gesehene hinaus.
+**Woher der verbleibende Fehler stammt — und warum das neuronale Netz gewinnt.** Die
+Untergrenze begrenzt, was angesichts der *Labels* möglich ist. Eine zweite Grenze folgt
+daraus, dass nur **sechs verschiedene Zustände** existieren: jede Faltung trainiert auf
+fünf und muss den sechsten vorhersagen. Für innere Zustände ist das Interpolation, für die
+Randzustände Extrapolation über alles Gesehene hinaus.
 
-| Faltungen | MAE [h] |
-|---|---:|
-| Randgruppen (3/5 h und 100 h) | 20,67 |
-| innere Gruppen | 8,31 |
+Aufgeschlüsselt nach Randgruppen (3/5 h und 100 h) gegen innere Gruppen:
 
-Bei ausgelassener 3-Stunden-Gruppe kennt das Modell nichts Heißeres als 24 h und sagt 25 h
-vorher; bei ausgelassener 100-Stunden-Gruppe nichts Kühleres als 82 h und sagt 80 h vorher.
+| Modell | Rand-MAE [h] | Innen-MAE [h] |
+|---|---:|---:|
+| **feature_mlp** | **5,65** | 10,53 |
+| isotonic | 20,67 | **8,31** |
+| linear | 14,23 | 11,06 |
+
+Das Ergebnis ist zunächst überraschend: **innen ist die isotone Regression besser** (8,31
+gegen 10,53). Der gesamte Vorsprung des neuronalen Netzes entsteht am Rand — und der Grund
+ist strukturell:
+
+| ausgelassene Gruppe | isotonic sagt | feature_mlp sagt | wahr |
+|---|---:|---:|---:|
+| 3 h | 25,00 | **11,14** | 3 |
+| 100 h | 80,00 | **97,33** | 100 |
+
+Die isotone Regression **kappt** auf den Wertebereich ihrer Trainingsdaten
+(`out_of_bounds="clip"`); sie kann per Konstruktion nichts außerhalb des Gesehenen
+vorhersagen. Das dichte Netz extrapoliert dagegen und trifft beide Randfälle deutlich
+besser.
+
+Damit ist der Kernbefund der Arbeit präzise erklärbar: Die 9,20 h gegenüber 11,68 h
+stammen **nicht** aus einer allgemein besseren Anpassung, sondern ausschließlich daraus,
+dass das Netz an den beiden Rändern nicht zusammenbricht. Für einen Datensatz mit sechs
+Zuständen, bei dem jede Faltung einen Randzustand vorhersagen muss, ist genau das die
+entscheidende Eigenschaft.
 
 ### 6.3 Kontrollexperiment mit permutierten Labels
 
@@ -434,6 +476,12 @@ Aus dieser Analyse folgte alles Weitere — Gruppierung nach Bildinhalt, eine be
 Fehleruntergrenze als Bezugsgröße, das Verbot photometrischer Augmentation und die
 Erkenntnis, dass ein Netz mit 209 Parametern auf einem einzigen physikalisch motivierten
 Merkmal ein CNN mit 25 745 Parametern deutlich schlägt.
+
+Der Vorsprung des besten Modells ist dabei präzise lokalisierbar: Im Inneren des
+Wertebereichs ist die isotone Regression sogar besser (8,31 gegen 10,53 h). Gewonnen wird
+ausschließlich an den beiden Rändern, weil das Netz extrapoliert, während die isotone
+Regression konstruktionsbedingt kappt. Bei sechs Zuständen, von denen jede Faltung einen
+Randzustand vorhersagen muss, entscheidet genau diese Eigenschaft.
 
 Das Ergebnis von **9,20 h MAE** liegt weit über der Untergrenze von 1,364 h. Die Lernkurve
 zeigt, warum: mit sechs unterscheidbaren Zuständen ist die Aufgabe datenbegrenzt, nicht
