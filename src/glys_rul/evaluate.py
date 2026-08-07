@@ -128,7 +128,55 @@ def run_evaluation(
                 ),
             )
 
+        from .dataset import augment_batch, build_image_tensor
+        from .models import build_cnn
+
+        images = build_image_tensor(
+            table, ColorScale.from_image(scale_path), data_dir, image_size=config.IMAGE_SIZE
+        )
+        configure(seed=0)
+        record(
+            "cnn",
+            cross_validate(
+                lambda: KerasRegressor(
+                    lambda: build_cnn(image_size=config.IMAGE_SIZE),
+                    epochs=config.CNN_EPOCHS,
+                    augment=augment_batch,
+                    augment_rounds=config.CNN_AUGMENT_ROUNDS,
+                    # Temperature maps are already scaled to [0, 1]; per-pixel
+                    # standardisation over nine images divides by the near-zero
+                    # spread of background pixels and diverges.
+                    standardise="none",
+                ),
+                images,
+                target,
+                groups,
+                baseline_mae=baseline_mae,
+            ),
+        )
+
+    # How much of the error is simply lack of data? Retrain on 2..n-1 groups.
+    from .controls import shuffled_label_control
+
+    unique_groups = sorted(set(groups.tolist()))
+    learning_curve = []
+    for size in range(2, len(unique_groups)):
+        subset = np.isin(groups, unique_groups[:size])
+        if len(set(groups[subset].tolist())) < 2:
+            continue
+        sub = cross_validate(BASELINES["isotonic"], totals[subset], target[subset], groups[subset])
+        learning_curve.append({"groups": size, "mae": round(sub.metrics["mae"], 6)})
+
+    # A model that still scores well on permuted labels is memorising, not learning.
+    shuffled = shuffled_label_control(target, groups, np.random.default_rng(0))
+    control = cross_validate(BASELINES["isotonic"], totals, shuffled, groups)
+
     results = {
+        "learning_curve": learning_curve,
+        "shuffled_label_control": {
+            "mae": round(control.metrics["mae"], 6),
+            "no_skill_mae": round(baseline_mae, 6),
+        },
         "dataset": {
             "n_files": int(len(table)),
             "n_groups": int(table["group"].nunique()),
@@ -174,6 +222,7 @@ def _write_figures(output_dir, results, totals, target, models, predictions) -> 
     from .figures import (
         plot_baseline_ladder,
         plot_confusion,
+        plot_learning_curve,
         plot_predicted_vs_actual,
         plot_residuals,
     )
@@ -182,6 +231,15 @@ def _write_figures(output_dir, results, totals, target, models, predictions) -> 
     floors = results["floors"]
     best = min(models, key=lambda name: models[name]["mae"])
     best_predictions = np.array(predictions[best], dtype=float)
+
+    curve = results.get("learning_curve") or []
+    if len(curve) >= 2:
+        plot_learning_curve(
+            [entry["groups"] for entry in curve],
+            [entry["mae"] for entry in curve],
+            floors,
+            figures_dir / "learning_curve.png",
+        )
 
     plot_predicted_vs_actual(
         target, best_predictions, floors, figures_dir / "predicted_vs_actual.png"

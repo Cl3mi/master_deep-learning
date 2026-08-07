@@ -31,8 +31,9 @@ MAX_ROUNDTRIP_ERROR_C = 50.0  # colour scale must invert at least this precisely
 # --- modelling ---------------------------------------------------------
 SEEDS = (0, 1, 2, 3, 4)
 TARGET_SCALE = 100.0         # RUL is divided by this before training
-IMAGE_SIZE = 128
-CNN_EPOCHS = 300
+IMAGE_SIZE = 64           # 128 px costs 4x the time for no measured accuracy gain
+CNN_EPOCHS = 200
+CNN_AUGMENT_ROUNDS = 3    # training set is originals plus this many augmented copies
 MLP_EPOCHS = 500
 LEARNING_RATE = 1e-3
 MAX_LOGO_GROUPS = 10         # above this, fall back to GroupKFold

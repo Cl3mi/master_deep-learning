@@ -27,6 +27,8 @@ class KerasRegressor:
         loss: str = "mse",
         augment: Callable[[np.ndarray, np.random.Generator], np.ndarray] | None = None,
         seed: int = 0,
+        standardise: str = "feature",
+        augment_rounds: int = 3,
     ) -> None:
         self.factory = factory
         self.epochs = epochs
@@ -35,6 +37,8 @@ class KerasRegressor:
         self.loss = loss
         self.augment = augment
         self.seed = seed
+        self.standardise = standardise
+        self.augment_rounds = augment_rounds
 
     def fit(self, features: np.ndarray, target: np.ndarray) -> KerasRegressor:
         import keras
@@ -43,14 +47,28 @@ class KerasRegressor:
         target = np.asarray(target, dtype=float)
 
         flat = features.reshape(len(features), -1)
-        self.feature_mean_ = flat.mean(axis=0)
-        self.feature_std_ = flat.std(axis=0)
-        # A constant column has zero spread; dividing by it would yield NaN.
-        self.feature_std_[self.feature_std_ == 0] = 1.0
+        if self.standardise == "none":
+            # Temperature maps already arrive scaled to [0, 1]. Standardising them
+            # per pixel across a handful of images divides by the near-zero spread
+            # of background pixels and blows the inputs up by orders of magnitude.
+            self.feature_mean_ = np.zeros(flat.shape[1])
+            self.feature_std_ = np.ones(flat.shape[1])
+        else:
+            self.feature_mean_ = flat.mean(axis=0)
+            self.feature_std_ = flat.std(axis=0)
+            # A constant column has zero spread; dividing by it would yield NaN.
+            self.feature_std_[self.feature_std_ == 0] = 1.0
 
         x = self._standardise(features)
-        if self.augment is not None:
-            x = self.augment(x, np.random.default_rng(self.seed))
+        scaled_target = target / self.target_scale
+
+        if self.augment is not None and self.augment_rounds > 0:
+            # Augmentation must *extend* the training set, not replace it. Handing
+            # back the same count would mean the model never sees a clean example.
+            rng = np.random.default_rng(self.seed)
+            rounds = [self.augment(x, rng) for _ in range(self.augment_rounds)]
+            x = np.concatenate([x, *rounds])
+            scaled_target = np.tile(scaled_target, 1 + self.augment_rounds)
 
         self.model_ = self.factory()
         self.model_.compile(
@@ -58,7 +76,7 @@ class KerasRegressor:
         )
         self.model_.fit(
             x,
-            target / self.target_scale,
+            scaled_target,
             epochs=self.epochs,
             batch_size=len(x),
             verbose=0,

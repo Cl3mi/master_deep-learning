@@ -42,6 +42,32 @@ def grouped_splits(
         yield np.flatnonzero(~mask), np.flatnonzero(mask)
 
 
+def build_image_tensor(
+    table, scale, data_dir, image_size: int = config.IMAGE_SIZE
+) -> np.ndarray:
+    """Convert every sample to a normalised single-channel temperature map.
+
+    Feeding calibrated temperature rather than raw RGB means the convolutional
+    and feature-based models consume the same physical quantity, so a difference
+    in their scores reflects architecture rather than input representation.
+
+    Rows follow `table` order, so tensor row i pairs with label i.
+    """
+    from pathlib import Path
+
+    from .io import load_rgb
+
+    maps = []
+    for filename in table["filename"]:
+        image = load_rgb(Path(data_dir) / filename)
+        temperatures = scale.to_map(image)
+        zoom = (image_size / temperatures.shape[0], image_size / temperatures.shape[1])
+        resized = _fit_to(ndimage.zoom(temperatures, zoom, order=1, mode="nearest"),
+                          image_size, image_size)
+        maps.append(resized / config.SCALE_VMAX)
+    return np.clip(np.stack(maps)[..., None], 0.0, 1.0)
+
+
 def augment_batch(
     images: np.ndarray,
     rng: np.random.Generator,

@@ -282,7 +282,7 @@ at runtime. `make validate` runs the audit alone and prints the contract report.
 ### 7.1 Execution
 
 ```bash
-docker compose up                        # full reproduction, ~2.5 min (measured 2m28s)
+docker compose up                        # full reproduction, ~6 min (measured 5m37s)
 docker compose --profile search up       # optimisation campaign, ~40 min
 docker compose --profile lab up          # Jupyter
 uv sync && make reproduce                # non-Docker fallback, same lockfile
