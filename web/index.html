@@ -120,9 +120,14 @@
       <div class="cap">Thermal view</div>
       <svg class="engine" viewBox="0 0 640 300" role="img"
            aria-label="Engine thermal view: intake cone, main body and pylon">
-        <polygon id="svg-cone"  class="part" points="24,112 152,84 152,236 24,208"/>
-        <rect    id="svg-body"  class="part" x="160" y="82"  width="296" height="156"/>
-        <rect    id="svg-pylon" class="part" x="464" y="96"  width="152" height="42"/>
+        <!-- Initial fills match the default slider values so the page never
+             flashes black before the first update. -->
+        <polygon id="svg-cone"  class="part" fill="rgb(255,192,2)"
+                 points="24,112 152,84 152,236 24,208"/>
+        <rect    id="svg-body"  class="part" fill="rgb(255,47,145)"
+                 x="160" y="82"  width="296" height="156"/>
+        <rect    id="svg-pylon" class="part" fill="rgb(255,47,145)"
+                 x="464" y="96"  width="152" height="42"/>
       </svg>
       <div class="scale">
         <div class="ramp"></div>
@@ -215,7 +220,9 @@ function update(){
 
   const rul=forward(total);
   const range=MODEL.observed_total_range;
-  const outside=range && (total<range[0]||total>range[1]);
+  // The observed bounds are measured values, so compare with a tolerance —
+  // otherwise the hottest observed state itself trips the warning.
+  const outside=range && (total<range[0]-1 || total>range[1]+1);
 
   $('rul').textContent = rul<0 ? '0.0' : rul.toFixed(1);
   $('rul').style.color=colourFor(1200-Math.max(0,Math.min(100,rul))*12);
@@ -227,7 +234,9 @@ function update(){
 
   const half=MODEL.interval_halfwidth||0;
   if(half){
-    const lo=rul-half, hi=rul+half;
+    // Remaining life cannot be negative; clip the interval at zero rather than
+    // advertising a bound the quantity itself excludes.
+    const lo=Math.max(0,rul-half), hi=rul+half;
     $('interval').textContent=`${MODEL.coverage||90}% prediction interval  ${lo.toFixed(1)} – ${hi.toFixed(1)} h`;
     const bar=$('bar'); bar.hidden=false;
     const clamp=v=>Math.max(0,Math.min(100,v));
